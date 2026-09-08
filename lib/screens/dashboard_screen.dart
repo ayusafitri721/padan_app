@@ -10,12 +10,15 @@ import 'detail_prediksi_screen.dart';
 import 'stok_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key, this.onGoToStok});
+  const DashboardScreen({super.key, this.onGoToStok, this.onGoToAkun});
 
   /// Dipanggil saat pengguna menekan FAB (+) — diset oleh MainShell untuk
   /// berpindah ke tab Stok. Bila null (mis. dipakai berdiri sendiri), tetap
   /// push StokScreen seperti sebelumnya.
   final VoidCallback? onGoToStok;
+
+  /// Dipanggil saat menekan ikon profil → pindah ke tab Akun.
+  final VoidCallback? onGoToAkun;
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -59,6 +62,45 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: true,
+        title: const Text(
+          'Beranda',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        actions: [
+          IconButton(
+            onPressed: () => _showNotifications(context),
+            icon: const Icon(Icons.notifications_outlined),
+            tooltip: 'Notifikasi',
+          ),
+          const SizedBox(width: 4),
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: InkWell(
+              onTap: () {
+                final go = widget.onGoToAkun;
+                if (go != null) {
+                  go();
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Buka tab Akun')),
+                  );
+                }
+              },
+              customBorder: const CircleBorder(),
+              child: const CircleAvatar(
+                radius: 16,
+                backgroundColor: Colors.white24,
+                child: Icon(Icons.person_outline, size: 18, color: Colors.white),
+              ),
+            ),
+          ),
+        ],
+      ),
       body: Stack(
         children: [
           const _BackgroundArt(),
@@ -74,6 +116,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   businessType: user?.businessType ?? '',
                   isOpen: _isOpen,
                   onToggleOpen: () => setState(() => _isOpen = !_isOpen),
+                  onTapProfile: () {
+                    final go = widget.onGoToAkun;
+                    if (go != null) {
+                      go();
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Buka tab Akun')),
+                      );
+                    }
+                  },
                 ),
                 const SizedBox(height: 16),
                 if (!_hasLoggedToday) ...[
@@ -249,12 +301,14 @@ class _Header extends StatelessWidget {
     required this.businessType,
     required this.isOpen,
     required this.onToggleOpen,
+    this.onTapProfile,
   });
 
   final String warungName;
   final String businessType;
   final bool isOpen;
   final VoidCallback onToggleOpen;
+  final VoidCallback? onTapProfile;
 
   String get _greeting {
     final hour = DateTime.now().hour;
@@ -427,21 +481,25 @@ class _Header extends StatelessWidget {
           Positioned(
             top: 16,
             right: 16,
-            child: Container(
-              padding: const EdgeInsets.all(3),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.25),
-              ),
-              child: CircleAvatar(
-                radius: 24,
-                backgroundColor: Colors.white,
-                child: Text(
-                  warungName.characters.first.toUpperCase(),
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.primary,
+            child: InkWell(
+              onTap: onTapProfile,
+              customBorder: const CircleBorder(),
+              child: Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.25),
+                ),
+                child: CircleAvatar(
+                  radius: 24,
+                  backgroundColor: Colors.white,
+                  child: Text(
+                    warungName.characters.first.toUpperCase(),
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primary,
+                    ),
                   ),
                 ),
               ),
@@ -1404,4 +1462,108 @@ class _RecommendationItem extends StatelessWidget {
       ),
     );
   }
+}
+
+void _showNotifications(BuildContext context) {
+  showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: AppColors.white,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (ctx) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: AppColors.tonalBadge,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.notifications_outlined,
+                      color: AppColors.primary, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'Notifikasi',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  icon: const Icon(Icons.close, size: 20, color: AppColors.mutedText),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.tonalBadge,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.analytics, size: 18, color: AppColors.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Rekomendasi AI: cek stok untuk besok — ada event di GBK.',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.warningSoft,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.warning_amber_rounded,
+                      size: 18, color: AppColors.accent),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Stok menipis — segera top-up sebelum jam operasional.',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Tutup'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }

@@ -23,8 +23,11 @@ class _MainShellState extends State<MainShell> {
       body: IndexedStack(
         index: _index,
         children: [
-          DashboardScreen(onGoToStok: () => _goToTab(1)),
-          const StokScreen(),
+          DashboardScreen(
+            onGoToStok: () => _goToTab(1),
+            onGoToAkun: () => _goToTab(4),
+          ),
+          StokScreen(onGoToAkun: () => _goToTab(4)),
           const _PlaceholderScreen(title: 'Limbah', icon: Icons.recycling_outlined),
           const _PlaceholderScreen(title: 'Harga', icon: Icons.sell_outlined),
           const _AkunScreen(),
