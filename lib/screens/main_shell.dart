@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../services/auth_service.dart';
 import 'dashboard_screen.dart';
+import 'limbah_screen.dart';
 import 'login_screen.dart';
 import 'stok_screen.dart';
 
@@ -28,7 +29,7 @@ class _MainShellState extends State<MainShell> {
             onGoToAkun: () => _goToTab(4),
           ),
           StokScreen(onGoToAkun: () => _goToTab(4)),
-          const _PlaceholderScreen(title: 'Limbah', icon: Icons.recycling_outlined),
+          LimbahScreen(onGoToAkun: () => _goToTab(4)),
           const _PlaceholderScreen(title: 'Harga', icon: Icons.sell_outlined),
           const _AkunScreen(),
         ],
