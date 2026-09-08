@@ -149,6 +149,12 @@ class SalesService {
     return DailySalesRecord.fromJson(data);
   }
 
+  static Future<DailySalesRecord?> fetchByDate(String date) async {
+    final data = await ApiService.get('/api/v1/sales/by-date?date=$date');
+    if (data.isEmpty) return null;
+    return DailySalesRecord.fromJson(data);
+  }
+
   static Future<MenuItem> createMenu(MenuInput input) async {
     final data = await ApiService.post('/api/v1/sales/menus', input.toJson());
     return MenuItem.fromJson(data);

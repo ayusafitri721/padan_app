@@ -38,6 +38,8 @@ dependencies:
   awesome_dialog: ^3.3.0
   google_fonts: ^8.1.0
   geolocator: ^13.0.2
+  flutter_localizations:
+    sdk: flutter
 
 dev_dependencies:
   flutter_test:

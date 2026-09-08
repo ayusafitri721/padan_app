@@ -1,6 +1,6 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user_id
@@ -217,6 +217,20 @@ def get_today(
     record = (
         db.query(DailySales)
         .filter(DailySales.user_id == user_id, DailySales.date == today)
+        .first()
+    )
+    return record
+
+
+@router.get("/by-date", response_model=schemas.DailySalesOut | None)
+def get_by_date(
+    target_date: date = Query(alias="date"),
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    record = (
+        db.query(DailySales)
+        .filter(DailySales.user_id == user_id, DailySales.date == target_date)
         .first()
     )
     return record

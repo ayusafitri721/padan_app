@@ -17,13 +17,45 @@ class StokScreen extends StatefulWidget {
 }
 
 class _StokScreenState extends State<StokScreen> {
-  final DateTime _today = DateTime.now();
+  DateTime _selectedDate = DateTime.now();
   bool _isHoliday = false;
   bool _loading = true;
   String? _error;
   List<MenuItem> _menus = [];
   final Map<int, int> _sold = {};
   final Map<int, PredictionPlan> _plans = {};
+
+  bool get _isToday {
+    final now = DateTime.now();
+    return _selectedDate.year == now.year &&
+        _selectedDate.month == now.month &&
+        _selectedDate.day == now.day;
+  }
+
+  void _changeDate(int delta) {
+    setState(() => _selectedDate = _selectedDate.add(Duration(days: delta)));
+    _load();
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2035),
+      helpText: 'Pilih tanggal penjualan',
+      cancelText: 'Batal',
+      confirmText: 'Pilih',
+      locale: const Locale('id', 'ID'),
+    );
+    if (picked != null && !_isSameDay(picked, _selectedDate)) {
+      setState(() => _selectedDate = picked);
+      await _load();
+    }
+  }
+
+  bool _isSameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
 
   @override
   void initState() {
@@ -38,12 +70,13 @@ class _StokScreenState extends State<StokScreen> {
     });
     try {
       final menusFuture = SalesService.fetchMenus();
-      final todayFuture = SalesService.fetchToday();
+      final dateStr = _dateOnly(_selectedDate);
+      final recordFuture = SalesService.fetchByDate(dateStr);
       final menus = await menusFuture;
-      final today = await todayFuture;
-      final tomorrow = _dateOnly(_today.add(const Duration(days: 1)));
+      final record = await recordFuture;
+      final tomorrowStr = _dateOnly(_selectedDate.add(const Duration(days: 1)));
       final planResults = await Future.wait(
-        menus.map((m) => PredictionService.fetchPlan(tomorrow, m.id)),
+        menus.map((m) => PredictionService.fetchPlan(tomorrowStr, m.id)),
       );
       if (!mounted) return;
       setState(() {
@@ -51,13 +84,13 @@ class _StokScreenState extends State<StokScreen> {
         _sold.clear();
         _plans.clear();
         for (final m in menus) {
-          _sold[m.id] = today?.items[m.id] ?? m.soldToday;
+          _sold[m.id] = record?.items[m.id] ?? 0;
         }
         for (int i = 0; i < menus.length; i++) {
           final plan = planResults[i];
           if (plan != null) _plans[menus[i].id] = plan;
         }
-        _isHoliday = today?.isHolidayToggle ?? _isHoliday;
+        _isHoliday = record?.isHolidayToggle ?? false;
         _loading = false;
       });
     } on Exception catch (e) {
@@ -100,15 +133,17 @@ class _StokScreenState extends State<StokScreen> {
       return;
     }
 
+    final dateStr = _dateOnly(_selectedDate);
+    final displayDate = _formattedDate();
     try {
       final summary = asDraft
           ? await SalesService.saveDraft(
-              date: _dateOnly(_today),
+              date: dateStr,
               isHolidayToggle: _isHoliday,
               items: items,
             )
           : await SalesService.saveDailyRecord(
-              date: _dateOnly(_today),
+              date: dateStr,
               isHolidayToggle: _isHoliday,
               items: items,
             );
@@ -118,7 +153,7 @@ class _StokScreenState extends State<StokScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Draf tersimpan (${summary.totalSold}/${summary.totalTarget} porsi).',
+              'Draf $displayDate tersimpan (${summary.totalSold}/${summary.totalTarget} porsi).',
             ),
           ),
         );
@@ -128,7 +163,7 @@ class _StokScreenState extends State<StokScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Data penjualan hari ini tersimpan! Efisiensi ${summary.efficiencyPercent.toStringAsFixed(1)}%.',
+            'Data penjualan $displayDate tersimpan! Efisiensi ${summary.efficiencyPercent.toStringAsFixed(1)}%.',
           ),
         ),
       );
@@ -267,7 +302,15 @@ class _StokScreenState extends State<StokScreen> {
       'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
       'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des',
     ];
-    return '${_today.day} ${idMonths[_today.month - 1]} ${_today.year}';
+    return '${_selectedDate.day} ${idMonths[_selectedDate.month - 1]} ${_selectedDate.year}';
+  }
+
+  String _formattedBadgeDate() {
+    if (_isToday) return 'Hari Ini, ${_formattedDate()}';
+    const idDays = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
+    // DateTime.weekday: Mon=1 .. Sun=7; map to Sen..Min
+    final dayLabel = idDays[_selectedDate.weekday - 1];
+    return '$dayLabel, ${_formattedDate()}';
   }
 
   void _showNotifications() {
@@ -428,10 +471,22 @@ class _StokScreenState extends State<StokScreen> {
                       vertical: 20,
                     ),
                     children: [
-                      _RutinitasBadge(date: 'Hari Ini, ${_formattedDate()}'),
+                      _RutinitasBadge(date: _formattedBadgeDate()),
+                      const SizedBox(height: 12),
+                      _DateFilter(
+                        displayDate: _formattedBadgeDate(),
+                        isToday: _isToday,
+                        onPrev: () => _changeDate(-1),
+                        onNext: () => _changeDate(1),
+                        onPick: _pickDate,
+                        onToday: () {
+                          setState(() => _selectedDate = DateTime.now());
+                          _load();
+                        },
+                      ),
                       const SizedBox(height: 16),
                       Text(
-                        'Input Penjualan Harian',
+                        _isToday ? 'Input Penjualan Harian' : 'Penjualan — ${_formattedDate()}',
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 24,
                           fontWeight: FontWeight.w700,
@@ -440,7 +495,9 @@ class _StokScreenState extends State<StokScreen> {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'Catat porsi terjual sebelum tutup kasir untuk menjaga akurasi prediksi stok esok hari.',
+                        _isToday
+                            ? 'Catat porsi terjual sebelum tutup kasir untuk menjaga akurasi prediksi stok esok hari.'
+                            : 'Menampilkan data untuk ${_formattedBadgeDate()}. Geser tanggal untuk melihat riwayat atau rencanakan tahun depan.',
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 13,
                           color: AppColors.mutedText,
@@ -502,6 +559,9 @@ class _StokScreenState extends State<StokScreen> {
                       ),
                       const SizedBox(height: 20),
                       _SaveButtons(
+                        saveLabel: _isToday
+                            ? 'Simpan Data Penjualan Hari Ini'
+                            : 'Simpan — ${_formattedDate()}',
                         onSave: () => _submit(asDraft: false),
                         onDraft: () => _submit(asDraft: true),
                       ),
@@ -548,6 +608,128 @@ class _RutinitasBadge extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _DateFilter extends StatelessWidget {
+  const _DateFilter({
+    required this.displayDate,
+    required this.isToday,
+    required this.onPrev,
+    required this.onNext,
+    required this.onPick,
+    required this.onToday,
+  });
+
+  final String displayDate;
+  final bool isToday;
+  final VoidCallback onPrev;
+  final VoidCallback onNext;
+  final VoidCallback onPick;
+  final VoidCallback onToday;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.outline, width: 1),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0A1E293B),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          _DateArrow(icon: Icons.chevron_left, onTap: onPrev),
+          const SizedBox(width: 4),
+          Expanded(
+            child: InkWell(
+              onTap: onPick,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.tonalBadge,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.calendar_today_outlined, size: 16, color: AppColors.primary),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        displayDate,
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    const Icon(Icons.expand_more, size: 16, color: AppColors.mutedText),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          _DateArrow(icon: Icons.chevron_right, onTap: onNext),
+          if (!isToday) ...[
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: onToday,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(9999),
+                ),
+                child: Text(
+                  'Hari Ini',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _DateArrow extends StatelessWidget {
+  const _DateArrow({required this.icon, required this.onTap});
+  final IconData icon;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      customBorder: const CircleBorder(),
+      child: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: AppColors.outline, width: 1),
+          color: AppColors.white,
+        ),
+        child: Icon(icon, size: 20, color: AppColors.textPrimary),
+      ),
     );
   }
 }
@@ -1079,10 +1261,15 @@ class _AiSummaryCard extends StatelessWidget {
 }
 
 class _SaveButtons extends StatelessWidget {
-  const _SaveButtons({required this.onSave, required this.onDraft});
+  const _SaveButtons({
+    required this.onSave,
+    required this.onDraft,
+    this.saveLabel = 'Simpan Data Penjualan Hari Ini',
+  });
 
   final VoidCallback onSave;
   final VoidCallback onDraft;
+  final String saveLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -1094,7 +1281,7 @@ class _SaveButtons extends StatelessWidget {
           child: ElevatedButton.icon(
             onPressed: onSave,
             icon: const Icon(Icons.description_outlined, size: 20),
-            label: const Text('Simpan Data Penjualan Hari Ini'),
+            label: Text(saveLabel),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
