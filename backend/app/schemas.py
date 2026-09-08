@@ -41,6 +41,7 @@ class MenuOut(BaseModel):
     accuracy: int
     sold_today: int
     remaining: int
+    price: int
 
 
 class MenuIn(BaseModel):
@@ -48,6 +49,7 @@ class MenuIn(BaseModel):
     category: str = "Makanan Utama"
     target_portions: int = 0
     accuracy: int = 0
+    price: int = 25000
 
 
 class DailySalesItemIn(BaseModel):
@@ -108,3 +110,35 @@ class PredictionPlanOut(BaseModel):
     recommended_portions: int
     locked_portions: int
     source: str
+
+
+# ── Dynamic Pricing ──────────────────────────────────────────
+class PricingConfigIn(BaseModel):
+    is_enabled: bool = True
+    max_discount_percentage: int = 35
+    start_intervention_time: str  # "HH:MM" atau "HH:MM:SS"
+    broadcast_whatsapp: bool = True
+
+
+class PricingScheduleOut(BaseModel):
+    time_interval: str
+    discount_percentage: int
+    description: str
+
+
+class PricingConfigOut(BaseModel):
+    is_enabled: bool
+    max_discount_percentage: int
+    start_intervention_time: str
+    broadcast_whatsapp: bool
+    schedules: list[PricingScheduleOut]
+
+
+class PricingLivePreviewOut(BaseModel):
+    menu_name: str
+    original_price: int
+    discounted_price: int
+    discount_percentage: int
+    remaining_portions: int
+    is_active: bool
+    description: str

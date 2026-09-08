@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'api_service.dart';
 
 class WasteChartPoint {
@@ -21,6 +23,7 @@ class WasteSummary {
     required this.chart,
     required this.insight,
     required this.levelLabel,
+    required this.auditCount,
   });
 
   final int financialCumulativeIdr;
@@ -30,6 +33,7 @@ class WasteSummary {
   final List<WasteChartPoint> chart;
   final String insight;
   final String levelLabel;
+  final int auditCount;
 
   factory WasteSummary.fromJson(Map<String, dynamic> j) => WasteSummary(
         financialCumulativeIdr: (j['financial_cumulative_idr'] as num? ?? 0).toInt(),
@@ -42,6 +46,7 @@ class WasteSummary {
         ],
         insight: j['insight'] as String? ?? '',
         levelLabel: j['level_label'] as String? ?? 'Bebas Mubazir',
+        auditCount: (j['audit_count'] as num? ?? 0).toInt(),
       );
 }
 
@@ -50,5 +55,9 @@ class WasteService {
   static Future<WasteSummary> fetchSummary() async {
     final data = await ApiService.get('/api/v1/waste/summary');
     return WasteSummary.fromJson(data);
+  }
+
+  static Future<Uint8List> downloadReport() async {
+    return ApiService.getBytes('/api/v1/waste/download-report');
   }
 }

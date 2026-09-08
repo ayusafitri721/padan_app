@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -102,6 +103,20 @@ class ApiService {
       return;
     }
     final data = _decode(response.body);
+    throw ApiException(
+      data['detail'] ?? 'Terjadi kesalahan (HTTP ${response.statusCode})',
+    );
+  }
+
+  static Future<Uint8List> getBytes(String path) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl$path'),
+      headers: _headers,
+    );
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return response.bodyBytes;
+    }
+    final data = _decode(response.body.isEmpty ? '{}' : response.body);
     throw ApiException(
       data['detail'] ?? 'Terjadi kesalahan (HTTP ${response.statusCode})',
     );

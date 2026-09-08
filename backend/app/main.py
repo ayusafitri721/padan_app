@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routers import auth, predictions, sales, waste, weather
+from .routers import auth, predictions, pricing, sales, waste, weather
 
 app = FastAPI(title="PADAN API", version="0.1.0")
 
@@ -19,6 +19,7 @@ app.include_router(weather.router)
 app.include_router(sales.router)
 app.include_router(predictions.router)
 app.include_router(waste.router)
+app.include_router(pricing.router)
 
 
 @app.get("/")

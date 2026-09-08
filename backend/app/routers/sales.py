@@ -56,6 +56,7 @@ def create_menu(
         category=payload.category.strip() or "Makanan Utama",
         target_portions=max(0, payload.target_portions),
         accuracy=max(0, payload.accuracy),
+        price=max(1000, payload.price),
     )
     db.add(menu)
     db.commit()
@@ -81,6 +82,7 @@ def update_menu(
     menu.category = payload.category.strip() or "Makanan Utama"
     menu.target_portions = max(0, payload.target_portions)
     menu.accuracy = max(0, payload.accuracy)
+    menu.price = max(1000, payload.price)
     db.commit()
     db.refresh(menu)
     return menu

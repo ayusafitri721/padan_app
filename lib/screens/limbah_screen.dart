@@ -1,9 +1,11 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../constants/app_colors.dart';
 import '../services/auth_service.dart';
 import '../services/waste_service.dart';
 import '../services/api_service.dart';
+import '../utils/web_download.dart';
 
 class LimbahScreen extends StatefulWidget {
   const LimbahScreen({super.key, this.onGoToAkun});
@@ -79,18 +81,109 @@ class _LimbahScreenState extends State<LimbahScreen> {
     );
   }
 
+  bool _downloading = false;
+
   Future<void> _downloadReport() async {
+    if (_downloading) return;
+    setState(() => _downloading = true);
     try {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Mengunduh laporan...')));
-      // Trigger download via ApiService: use direct fetch without json decode; fallback to snackbar
-      // For web, we rely on backend streaming — show success placeholder
-      await WasteService.fetchSummary(); // keep session alive
+      final bytes = await WasteService.downloadReport();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Laporan limbah (PDF) siap diunduh — hubungkan endpoint /waste/download-report di browser.')));
+      if (kIsWeb) {
+        await downloadBytes(bytes, 'padan-laporan-limbah.pdf');
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Laporan terunduh (${bytes.length} bytes)')));
+      } else {
+        // Mobile: belum simpan ke storage — tampilkan ukuran, bisa dikembangkan pakai path_provider/share
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Laporan siap (${bytes.length} bytes) — simpan file diimplementasikan untuk mobile.')));
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+    } finally {
+      if (mounted) setState(() => _downloading = false);
     }
+  }
+
+  void _showProPlanDetail() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Container(width: 36, height: 36, decoration: BoxDecoration(color: AppColors.tonalBadge, borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.workspace_premium, color: AppColors.primary, size: 20)),
+              const SizedBox(width: 12),
+              Text('PADAN Pro Plan', style: GoogleFonts.plusJakartaSans(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+              const Spacer(),
+              IconButton(onPressed: () => Navigator.of(ctx).pop(), icon: const Icon(Icons.close, size: 20, color: AppColors.mutedText)),
+            ]),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: AppColors.tonalBadge, borderRadius: BorderRadius.circular(12)),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Aktif s/d 31 Des 2025', style: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.primary)),
+                const SizedBox(height: 4),
+                Text('Fitur AI & Cuaca BMKG • Prediksi stok harian, audit limbah otomatis, dan laporan PDF.', style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppColors.textPrimary, height: 1.4)),
+              ]),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(width: double.infinity, child: TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Tutup'))),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  void _showKonsultan() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Container(width: 36, height: 36, decoration: BoxDecoration(color: AppColors.tonalBadge, borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.support_agent, color: AppColors.primary, size: 20)),
+              const SizedBox(width: 12),
+              Text('Konsultan PADAN', style: GoogleFonts.plusJakartaSans(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+              const Spacer(),
+              IconButton(onPressed: () => Navigator.of(ctx).pop(), icon: const Icon(Icons.close, size: 20, color: AppColors.mutedText)),
+            ]),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: AppColors.tonalBadge, borderRadius: BorderRadius.circular(12)),
+              child: Row(children: [
+                const Icon(Icons.chat_bubble_outline, size: 18, color: AppColors.primary),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Konsultasi sisa porsi & resep daur pangan via chat. Hubungi tim PADAN untuk rekomendasi pengolahan limbah menjadi menu baru.', style: GoogleFonts.plusJakartaSans(fontSize: 13, color: AppColors.textPrimary, height: 1.4))),
+              ]),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Membuka chat konsultan — hubungi support@padan.id')));
+                },
+                icon: const Icon(Icons.chat_outlined, size: 18),
+                label: const Text('Hubungi via Chat'),
+                style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9999))),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
   }
 
   String _idr(int v) {
@@ -166,7 +259,14 @@ class _LimbahScreenState extends State<LimbahScreen> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                             decoration: BoxDecoration(color: const Color(0xFFE8F5E9), borderRadius: BorderRadius.circular(9999), border: Border.all(color: const Color(0xFFA5D6A7))),
-                            child: Text('🌿 ${_data!.levelLabel}', style: GoogleFonts.plusJakartaSans(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.primary)),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.eco_outlined, size: 14, color: Color(0xFF2E7D32)),
+                                const SizedBox(width: 4),
+                                Text(_data!.levelLabel, style: GoogleFonts.plusJakartaSans(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.primary)),
+                              ],
+                            ),
                           ),
                         ],
                       ),
@@ -259,7 +359,14 @@ class _LimbahScreenState extends State<LimbahScreen> {
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                   decoration: BoxDecoration(color: const Color(0xFFE8F5E9), borderRadius: BorderRadius.circular(9999)),
-                                  child: Text('📉 ${_data!.wasteReductionPercent}% Limbah', style: GoogleFonts.plusJakartaSans(fontSize: 11, fontWeight: FontWeight.w700, color: const Color(0xFF2E7D32))),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.trending_down, size: 14, color: Color(0xFF2E7D32)),
+                                      const SizedBox(width: 4),
+                                      Text('${_data!.wasteReductionPercent}% Limbah', style: GoogleFonts.plusJakartaSans(fontSize: 11, fontWeight: FontWeight.w700, color: const Color(0xFF2E7D32))),
+                                    ],
+                                  ),
                                 ),
                               ],
                             ),
@@ -341,24 +448,36 @@ class _LimbahScreenState extends State<LimbahScreen> {
                               ],
                             ),
                             const SizedBox(height: 14),
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(color: AppColors.tonalBadge, borderRadius: BorderRadius.circular(14)),
-                              child: Row(children: [
-                                Container(width: 32, height: 32, decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.workspace_premium_outlined, size: 18, color: Colors.white)),
-                                const SizedBox(width: 10),
-                                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                  Text('PADAN Pro Plan', style: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-                                  Text('Aktif s/d 31 Des 2025 • Fitur AI & Cuaca BMKG', style: GoogleFonts.plusJakartaSans(fontSize: 11, color: AppColors.mutedText)),
-                                ])),
-                                const Icon(Icons.chevron_right, size: 20, color: AppColors.mutedText),
-                              ]),
+                            InkWell(
+                              onTap: _showProPlanDetail,
+                              borderRadius: BorderRadius.circular(14),
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(color: AppColors.tonalBadge, borderRadius: BorderRadius.circular(14)),
+                                child: Row(children: [
+                                  Container(width: 32, height: 32, decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.workspace_premium_outlined, size: 18, color: Colors.white)),
+                                  const SizedBox(width: 10),
+                                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                    Text('PADAN Pro Plan', style: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                                    Text('Aktif s/d 31 Des 2025 • Fitur AI & Cuaca BMKG', style: GoogleFonts.plusJakartaSans(fontSize: 11, color: AppColors.mutedText)),
+                                  ])),
+                                  const Icon(Icons.chevron_right, size: 20, color: AppColors.mutedText),
+                                ]),
+                              ),
                             ),
                             const SizedBox(height: 12),
                             const Divider(height: 1, color: AppColors.outline),
-                            _ActionRow(icon: Icons.picture_as_pdf_outlined, title: 'Laporan Lengkap Food Waste', subtitle: 'Unduh rekap bulanan format PDF', trailing: Icons.download_outlined, onTap: null),
-                            _ActionRow(icon: Icons.verified_outlined, title: 'Riwayat Audit Pangan Hijau', subtitle: '8 kali validasi dapur ramah lingkungan', trailing: Icons.chevron_right, onTap: null),
-                            _ActionRow(icon: Icons.chat_bubble_outline, title: 'Hubungi Konsultan PADAN', subtitle: 'Konsultasi sisa porsi & resep daur pangan', trailing: Icons.chevron_right, onTap: null, isLast: true),
+                            _ActionRow(icon: Icons.picture_as_pdf_outlined, title: 'Laporan Lengkap Food Waste', subtitle: 'Unduh rekap bulanan format PDF', trailing: Icons.download_outlined, onTap: _downloadReport),
+                            _ActionRow(
+                              icon: Icons.verified_outlined,
+                              title: 'Riwayat Audit Pangan Hijau',
+                              subtitle: '${_data!.auditCount} kali validasi dapur ramah lingkungan',
+                              trailing: Icons.chevron_right,
+                              onTap: () {
+                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Riwayat audit: ${_data!.auditCount} validasi tercatat')));
+                              },
+                            ),
+                            _ActionRow(icon: Icons.chat_bubble_outline, title: 'Hubungi Konsultan PADAN', subtitle: 'Konsultasi sisa porsi & resep daur pangan', trailing: Icons.chevron_right, onTap: _showKonsultan, isLast: true),
                           ],
                         ),
                       ),
@@ -368,9 +487,11 @@ class _LimbahScreenState extends State<LimbahScreen> {
                         width: double.infinity,
                         height: 48,
                         child: OutlinedButton.icon(
-                          onPressed: _downloadReport,
-                          icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
-                          label: const Text('Unduh Laporan PDF'),
+                          onPressed: _downloading ? null : _downloadReport,
+                          icon: _downloading
+                              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                              : const Icon(Icons.picture_as_pdf_outlined, size: 18),
+                          label: Text(_downloading ? 'Mengunduh...' : 'Unduh Laporan PDF'),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: AppColors.primary,
                             side: const BorderSide(color: AppColors.primary),

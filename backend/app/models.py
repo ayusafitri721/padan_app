@@ -8,6 +8,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Time,
 )
 from sqlalchemy.orm import relationship
 
@@ -38,6 +39,7 @@ class Menu(Base):
     accuracy = Column(Integer, nullable=False, default=0)  # persen akurasi historis
     sold_today = Column(Integer, nullable=False, default=0)
     remaining = Column(Integer, nullable=False, default=0)
+    price = Column(Integer, nullable=False, default=25000)  # harga jual per porsi (untuk preview diskon)
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False, default=datetime.now)
 
@@ -85,3 +87,30 @@ class PredictionPlan(Base):
     locked_portions = Column(Integer, nullable=False, default=0)
     source = Column(String(20), nullable=False, default="ai")  # ai / manual
     created_at = Column(DateTime, nullable=False, default=datetime.now)
+
+
+class DynamicPricingRule(Base):
+    __tablename__ = "dynamic_pricing_rules"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
+    is_enabled = Column(Boolean, nullable=False, default=True)
+    max_discount_percentage = Column(Integer, nullable=False, default=35)
+    start_intervention_time = Column(Time, nullable=False)
+    broadcast_whatsapp = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now)
+
+    schedules = relationship("PricingSchedule", back_populates="rule", cascade="all, delete-orphan")
+
+
+class PricingSchedule(Base):
+    __tablename__ = "pricing_schedules"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    rule_id = Column(Integer, ForeignKey("dynamic_pricing_rules.id"), nullable=False)
+    time_interval = Column(Time, nullable=False)
+    discount_percentage = Column(Integer, nullable=False, default=0)
+    description = Column(String(255), nullable=False, default="")
+
+    rule = relationship("DynamicPricingRule", back_populates="schedules")

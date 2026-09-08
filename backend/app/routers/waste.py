@@ -54,6 +54,7 @@ def get_waste_summary(
             "chart": dummy_chart,
             "insight": "Porsi over-produksi berkurang drastis berkat kalkulator porsi otomatis BMKG & Hari Libur.",
             "level_label": "Bebas Mubazir Level 3",
+            "audit_count": 8,
         }
 
     # Hitung real dari DB: waste = remaining, saved = sold
@@ -113,6 +114,21 @@ def get_waste_summary(
     if month_saved == 0:
         month_saved = 312  # fallback spec
 
+    # Audit count & level dinamis
+    audit_count = db.query(DailySales).filter(DailySales.user_id == user_id, DailySales.status == "final").count()
+    if audit_count == 0 and all_sales:
+        audit_count = len(all_sales)
+    if audit_count == 0:
+        audit_count = 8  # fallback spec
+    if reduction <= -75:
+        level = "Bebas Mubazir Level 3"
+    elif reduction <= -40:
+        level = "Bebas Mubazir Level 2"
+    elif reduction <= -15:
+        level = "Bebas Mubazir Level 1"
+    else:
+        level = "Pejuang Pangan"
+
     return {
         "financial_cumulative_idr": financial,
         "month_saved_portions": month_saved,
@@ -120,7 +136,8 @@ def get_waste_summary(
         "waste_reduction_percent": reduction,
         "chart": chart,
         "insight": "Porsi over-produksi berkurang drastis berkat kalkulator porsi otomatis BMKG & Hari Libur.",
-        "level_label": "Bebas Mubazir Level 3",
+        "level_label": level,
+        "audit_count": audit_count,
     }
 
 
