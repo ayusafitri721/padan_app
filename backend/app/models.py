@@ -23,6 +23,7 @@ class User(Base):
     phone_or_email = Column(String(255), nullable=False, unique=True)
     business_type = Column(String(100), nullable=False)
     password_hash = Column(String(255), nullable=False)
+    avatar_url = Column(String(500), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.now)
 
     menus = relationship("Menu", back_populates="user")
@@ -114,3 +115,39 @@ class PricingSchedule(Base):
     description = Column(String(255), nullable=False, default="")
 
     rule = relationship("DynamicPricingRule", back_populates="schedules")
+
+
+class Outlet(Base):
+    __tablename__ = "outlets"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
+    outlet_name = Column(String(255), nullable=False)
+    address = Column(String(500), nullable=False, default="Jl. Tebet Raya No. 42")
+    opening_time = Column(Time, nullable=False)
+    closing_time = Column(Time, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now)
+
+
+class Subscription(Base):
+    __tablename__ = "subscriptions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
+    plan_name = Column(String(100), nullable=False, default="PADAN Pro Plan")
+    status = Column(String(20), nullable=False, default="ACTIVE")
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+
+
+class AiPreference(Base):
+    __tablename__ = "ai_preferences"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
+    weather_sensitivity_mode = Column(String(20), nullable=False, default="MODERATE")
+    max_critical_discount = Column(Integer, nullable=False, default=35)
+    last_offline_sync = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now)

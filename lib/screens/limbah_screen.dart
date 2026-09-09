@@ -5,6 +5,7 @@ import '../constants/app_colors.dart';
 import '../services/auth_service.dart';
 import '../services/waste_service.dart';
 import '../services/api_service.dart';
+import '../utils/file_saver.dart';
 import '../utils/web_download.dart';
 
 class LimbahScreen extends StatefulWidget {
@@ -95,8 +96,14 @@ class _LimbahScreenState extends State<LimbahScreen> {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Laporan terunduh (${bytes.length} bytes)')));
       } else {
-        // Mobile: belum simpan ke storage — tampilkan ukuran, bisa dikembangkan pakai path_provider/share
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Laporan siap (${bytes.length} bytes) — simpan file diimplementasikan untuk mobile.')));
+        final path = await saveBytesToFile(bytes, 'padan-laporan-limbah.pdf');
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Laporan tersimpan di $path (${bytes.length} bytes)'),
+            duration: const Duration(seconds: 4),
+          ),
+        );
       }
     } catch (e) {
       if (!mounted) return;

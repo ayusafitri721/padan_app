@@ -67,6 +67,24 @@ class AuthService {
     currentSession.value = null;
   }
 
+  static void updateCurrentUser({
+    String? warungName,
+    String? phoneOrEmail,
+    String? businessType,
+  }) {
+    final cur = currentSession.value;
+    if (cur == null) return;
+    currentSession.value = AuthResult(
+      token: cur.token,
+      user: AuthUser(
+        id: cur.user.id,
+        warungName: warungName ?? cur.user.warungName,
+        phoneOrEmail: phoneOrEmail ?? cur.user.phoneOrEmail,
+        businessType: businessType ?? cur.user.businessType,
+      ),
+    );
+  }
+
   static AuthResult _setSession(Map<String, dynamic> data) {
     final result = AuthResult(
       token: data['access_token'] as String,

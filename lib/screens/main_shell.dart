@@ -5,6 +5,7 @@ import 'dashboard_screen.dart';
 import 'harga_screen.dart';
 import 'limbah_screen.dart';
 import 'login_screen.dart';
+import 'profile_screen.dart';
 import 'stok_screen.dart';
 
 class MainShell extends StatefulWidget {
@@ -32,63 +33,12 @@ class _MainShellState extends State<MainShell> {
           StokScreen(onGoToAkun: () => _goToTab(4)),
           LimbahScreen(onGoToAkun: () => _goToTab(4)),
           HargaScreen(onGoToAkun: () => _goToTab(4)),
-          const _AkunScreen(),
+          const ProfileScreen(),
         ],
       ),
       bottomNavigationBar: _MorphingNavBar(
         index: _index,
         onTap: (i) => setState(() => _index = i),
-      ),
-    );
-  }
-}
-
-class _NavItem extends StatelessWidget {
-  const _NavItem({
-    required this.icon,
-    required this.selectedIcon,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final IconData selectedIcon;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      customBorder: const CircleBorder(),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            decoration: BoxDecoration(
-              color: selected ? AppColors.tonalBadge : Colors.transparent,
-              borderRadius: BorderRadius.circular(9999),
-            ),
-            child: Icon(
-              selected ? selectedIcon : icon,
-              size: 24,
-              color: selected ? AppColors.primary : AppColors.mutedText,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-              color: selected ? AppColors.primary : AppColors.mutedText,
-            ),
-          ),
-        ],
       ),
     );
   }

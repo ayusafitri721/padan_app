@@ -22,7 +22,21 @@ class UserOut(BaseModel):
     warung_name: str
     phone_or_email: str
     business_type: str
+    avatar_url: str | None = None
     created_at: datetime
+
+
+class UserUpdateIn(BaseModel):
+    warung_name: str | None = None
+    phone_or_email: str | None = None
+    business_type: str | None = None
+
+
+class OutletIn(BaseModel):
+    outlet_name: str | None = None
+    address: str | None = None
+    opening_time: str | None = None  # "HH:MM"
+    closing_time: str | None = None
 
 
 class TokenResponse(BaseModel):
@@ -142,3 +156,37 @@ class PricingLivePreviewOut(BaseModel):
     remaining_portions: int
     is_active: bool
     description: str
+
+
+# ── Profile ──────────────────────────────────────────────────
+class OutletOut(BaseModel):
+    outlet_name: str
+    address: str
+    opening_time: str
+    closing_time: str
+
+
+class SubscriptionOut(BaseModel):
+    plan_name: str
+    status: str
+    expires_at: datetime
+
+
+class AiPreferenceOut(BaseModel):
+    weather_sensitivity_mode: str
+    max_critical_discount: int
+    last_offline_sync: datetime | None
+
+
+class AiPreferenceIn(BaseModel):
+    weather_sensitivity_mode: str = "MODERATE"
+    max_critical_discount: int = 35
+
+
+class ProfileDetailsOut(BaseModel):
+    user: UserOut
+    outlet: OutletOut
+    subscription: SubscriptionOut
+    ai_preference: AiPreferenceOut
+    stats: dict
+    certification: dict
