@@ -24,6 +24,15 @@ def _time_to_str(t: time) -> str:
     return t.strftime("%H:%M")
 
 
+def _shift_minutes(t: time, mins: int) -> time:
+    """Geser jam sebanyak mins menit (boleh negatif, bungkus 24 jam)."""
+    total = (t.hour * 60 + t.minute + mins) % (24 * 60)
+    return time(hour=total // 60, minute=total % 60)
+
+
+INTERVENTION_LEAD_MINUTES = 90  # diskon mulai 90 mnt sebelum tutup
+
+
 def _build_schedules(rule: DynamicPricingRule) -> list[dict]:
     """Hasilkan 4 jadwal dari start time: +0m 10%, +30m 20%, +60m 35% (max), +90m tutup."""
     base = datetime.combine(datetime.today(), rule.start_intervention_time)
@@ -72,19 +81,26 @@ def _schedules_out(rule: DynamicPricingRule) -> list[schemas.PricingScheduleOut]
     ]
 
 
+def _config_out(rule: DynamicPricingRule) -> schemas.PricingConfigOut:
+    return schemas.PricingConfigOut(
+        is_enabled=rule.is_enabled,
+        max_discount_percentage=rule.max_discount_percentage,
+        start_intervention_time=_time_to_str(rule.start_intervention_time),
+        closing_time=_time_to_str(
+            _shift_minutes(rule.start_intervention_time, INTERVENTION_LEAD_MINUTES)
+        ),
+        broadcast_whatsapp=rule.broadcast_whatsapp,
+        schedules=_schedules_out(rule),
+    )
+
+
 @router.get("/config", response_model=schemas.PricingConfigOut)
 def get_config(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
     rule = _ensure_rule(db, user_id)
-    return schemas.PricingConfigOut(
-        is_enabled=rule.is_enabled,
-        max_discount_percentage=rule.max_discount_percentage,
-        start_intervention_time=_time_to_str(rule.start_intervention_time),
-        broadcast_whatsapp=rule.broadcast_whatsapp,
-        schedules=_schedules_out(rule),
-    )
+    return _config_out(rule)
 
 
 @router.put("/config", response_model=schemas.PricingConfigOut)
@@ -94,7 +110,17 @@ def put_config(
     db: Session = Depends(get_db),
 ):
     max_disc = max(10, min(60, payload.max_discount_percentage))
-    t = _parse_time(payload.start_intervention_time)
+    if payload.closing_time:
+        # Cara baru: user isi jam tutup → intervensi mulai 90 mnt sebelumnya.
+        closing = _parse_time(payload.closing_time)
+        t = _shift_minutes(closing, -INTERVENTION_LEAD_MINUTES)
+    elif payload.start_intervention_time:
+        t = _parse_time(payload.start_intervention_time)
+    else:
+        raise HTTPException(
+            status_code=422,
+            detail="Isi closing_time (jam tutup) atau start_intervention_time.",
+        )
 
     rule = db.query(DynamicPricingRule).filter(DynamicPricingRule.user_id == user_id).first()
     if not rule:
@@ -115,13 +141,7 @@ def put_config(
         db.add(PricingSchedule(rule_id=rule.id, time_interval=_parse_time(s["time_interval"]), discount_percentage=s["discount_percentage"], description=s["description"]))
     db.commit()
     db.refresh(rule)
-    return schemas.PricingConfigOut(
-        is_enabled=rule.is_enabled,
-        max_discount_percentage=rule.max_discount_percentage,
-        start_intervention_time=_time_to_str(rule.start_intervention_time),
-        broadcast_whatsapp=rule.broadcast_whatsapp,
-        schedules=_schedules_out(rule),
-    )
+    return _config_out(rule)
 
 
 @router.get("/live-preview", response_model=schemas.PricingLivePreviewOut)
