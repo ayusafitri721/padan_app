@@ -60,6 +60,7 @@ class MenuPrediction {
     required this.safeSweet,
     required this.safeHigh,
     required this.co2eSavedKg,
+    this.weatherLocation = '',
     required this.factors,
     required this.ingredients,
   });
@@ -76,6 +77,7 @@ class MenuPrediction {
   final int safeSweet;
   final int safeHigh;
   final double co2eSavedKg;
+  final String weatherLocation;
   final List<PredictionFactor> factors;
   final List<Ingredient> ingredients;
 
@@ -92,6 +94,7 @@ class MenuPrediction {
         safeSweet: (json['safe_sweet'] ?? 0) as int,
         safeHigh: (json['safe_high'] ?? 0) as int,
         co2eSavedKg: ((json['co2e_saved_kg'] ?? 0) as num).toDouble(),
+        weatherLocation: (json['weather_location'] ?? '') as String,
         factors: [
           for (final e in (json['factors'] as List<dynamic>? ?? []))
             PredictionFactor.fromJson(e as Map<String, dynamic>),
@@ -100,6 +103,40 @@ class MenuPrediction {
           for (final e in (json['ingredients'] as List<dynamic>? ?? []))
             Ingredient.fromJson(e as Map<String, dynamic>),
         ],
+      );
+}
+
+class TodayRecommendation {
+  const TodayRecommendation({
+    required this.menuId,
+    required this.menuName,
+    required this.category,
+    required this.accuracyScore,
+    required this.recommendedPortions,
+    required this.safeLow,
+    required this.safeHigh,
+    required this.reason,
+  });
+
+  final int menuId;
+  final String menuName;
+  final String category;
+  final double accuracyScore;
+  final int recommendedPortions;
+  final int safeLow;
+  final int safeHigh;
+  final String reason;
+
+  factory TodayRecommendation.fromJson(Map<String, dynamic> json) =>
+      TodayRecommendation(
+        menuId: (json['menu_id'] ?? 0) as int,
+        menuName: (json['menu_name'] ?? '') as String,
+        category: (json['category'] ?? '') as String,
+        accuracyScore: ((json['accuracy_score'] ?? 0) as num).toDouble(),
+        recommendedPortions: (json['recommended_portions'] ?? 0) as int,
+        safeLow: (json['safe_low'] ?? 0) as int,
+        safeHigh: (json['safe_high'] ?? 0) as int,
+        reason: (json['reason'] ?? '') as String,
       );
 }
 
@@ -136,8 +173,34 @@ class PredictionPlan {
 class PredictionService {
   PredictionService._();
 
-  static Future<MenuPrediction> fetchDetail(int menuId) async {
-    final data = await ApiService.get('/api/v1/predictions/detail/$menuId');
+  static Future<List<TodayRecommendation>> fetchToday({
+    double? latitude,
+    double? longitude,
+    String? adm4,
+  }) async {
+    final query = adm4 != null
+        ? '?adm4=$adm4'
+        : (latitude != null && longitude != null
+            ? '?lat=$latitude&lon=$longitude'
+            : '');
+    final data = await ApiService.getList('/api/v1/predictions/today$query');
+    return data
+        .map((e) => TodayRecommendation.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  static Future<MenuPrediction> fetchDetail(
+    int menuId, {
+    double? latitude,
+    double? longitude,
+    String? adm4,
+  }) async {
+    final query = adm4 != null
+        ? '?adm4=$adm4'
+        : (latitude != null && longitude != null
+            ? '?lat=$latitude&lon=$longitude'
+            : '');
+    final data = await ApiService.get('/api/v1/predictions/detail/$menuId$query');
     return MenuPrediction.fromJson(data);
   }
 
