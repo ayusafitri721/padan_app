@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import '../constants/app_colors.dart';
 import '../services/prediction_service.dart';
 import '../services/sales_service.dart';
+import 'detail_prediksi_list_screen.dart';
 import 'detail_prediksi_screen.dart';
 
 class StokScreen extends StatefulWidget {
@@ -188,15 +189,14 @@ class _StokScreenState extends State<StokScreen> {
         ),
       );
 
-      final topMenu = _menus
-          .where((m) => (_sold[m.id] ?? 0) > 0)
-          .reduce((a, b) => (_sold[a.id] ?? 0) >= (_sold[b.id] ?? 0) ? a : b);
+      // Kumpulkan semua menu yang diinput (>0) agar detail menampilkan semuanya, bukan cuma top 1 (merge main)
+      final savedIds = items.map((e) => e['menu_id'] as int).toList();
 
       await _load();
       if (!mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => DetailPrediksiScreen(menuId: topMenu.id),
+          builder: (_) => DetailPrediksiListScreen(menuIds: savedIds),
         ),
       );
       await _load();

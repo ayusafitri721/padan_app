@@ -49,7 +49,7 @@ def get_waste_summary(
             "audit_count": 0,
         }
 
-    # Harga asli per menu (fallback ke rata-rata bila menu belum punya harga)
+    # Harga asli per menu (fallback ke rata-rata bila menu belum punya harga) — bara
     prices = {
         m.id: (m.price if m.price and m.price > 0 else AVG_PRICE_PER_PORTION)
         for m in db.query(Menu).filter(Menu.user_id == user_id).all()
@@ -72,7 +72,7 @@ def get_waste_summary(
             financial += it.sold_portions * prices.get(it.menu_id, AVG_PRICE_PER_PORTION)
 
     # Ambil 4 bulan terakhir termasuk bulan ini (hanya bulan yang ada datanya
-    # yang tampil; tidak ada suntikan angka dummy)
+    # yang tampil; tidak ada suntikan angka dummy) — bara
     chart = []
     id_labels = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agt", "Sep", "Okt", "Nov", "Des"]
     for i in range(3, -1, -1):
@@ -94,7 +94,7 @@ def get_waste_summary(
     total_waste_kg = sum(monthly_waste_kg.values())
     co2 = round(total_waste_kg * CO2_PER_KG, 1)
 
-    # Persen penurunan limbah (bulan pertama vs terakhir yang ada datanya)
+    # Persen penurunan limbah (bulan pertama vs terakhir yang ada datanya) — bara
     if len(chart) >= 2 and chart[0]["waste_kg"] > 0:
         first = chart[0]["waste_kg"]
         last = chart[-1]["waste_kg"]
@@ -117,6 +117,14 @@ def get_waste_summary(
     else:
         level = "Pejuang Pangan"
 
+    # Insight dinamis gabungan bara+main: main punya varian lebih kaya untuk limbah tinggi/stabil
+    if reduction <= -30:
+        insight = "Porsi over-produksi berkurang drastis berkat kalkulator porsi otomatis BMKG & Hari Libur."
+    elif total_waste_kg > 5:
+        insight = "Limbah masih terdeteksi — aktifkan Dynamic Pricing di tab Harga untuk kurangi sisa >3 porsi."
+    else:
+        insight = "Performa stabil — pertahankan pencatatan harian untuk jaga tren penurunan limbah."
+
     return {
         "has_data": True,
         "financial_cumulative_idr": financial,
@@ -124,11 +132,7 @@ def get_waste_summary(
         "co2_reduced_kg": co2,
         "waste_reduction_percent": reduction,
         "chart": chart,
-        "insight": (
-            "Porsi over-produksi berkurang berkat kalkulator porsi otomatis BMKG & Hari Libur."
-            if reduction < 0
-            else "Terus catat penjualan harian agar tren limbah menurun dari bulan ke bulan."
-        ),
+        "insight": insight,
         "level_label": level,
         "audit_count": audit_count,
     }

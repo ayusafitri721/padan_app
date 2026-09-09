@@ -101,6 +101,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       setState(() {
         _today = record;
         _todayLoading = false;
+        _hasLoggedToday = record != null && record.items.isNotEmpty;
       });
     } on Exception {
       if (!mounted) return;
@@ -288,10 +289,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   },
                 ),
                 const SizedBox(height: 16),
-                if (!_hasLoggedToday) ...[
+                if (!_hasLoggedToday && !_todayLoading) ...[
                   _ReminderCard(
                     onCatatSekarang: () {
-                      setState(() => _hasLoggedToday = true);
+                      final go = widget.onGoToStok;
+                      if (go != null) {
+                        go();
+                      } else {
+                        Navigator.of(context).push(MaterialPageRoute(builder: (_) => const StokScreen()));
+                      }
                     },
                   ),
                   const SizedBox(height: 12),
