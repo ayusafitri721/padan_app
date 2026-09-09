@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-DATABASE_URL = "mysql+pymysql://root@127.0.0.1:3306/padan_db?charset=utf8mb4"
+DATABASE_URL = "mysql+pymysql://padan:padan123@127.0.0.1:3306/padan_db?charset=utf8mb4"
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 
