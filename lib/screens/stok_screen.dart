@@ -5,7 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../constants/app_colors.dart';
 import '../services/prediction_service.dart';
 import '../services/sales_service.dart';
-import 'detail_prediksi_screen.dart';
+import 'detail_prediksi_list_screen.dart';
 
 class StokScreen extends StatefulWidget {
   const StokScreen({super.key, this.onGoToAkun});
@@ -168,15 +168,14 @@ class _StokScreenState extends State<StokScreen> {
         ),
       );
 
-      final topMenu = _menus
-          .where((m) => (_sold[m.id] ?? 0) > 0)
-          .reduce((a, b) => (_sold[a.id] ?? 0) >= (_sold[b.id] ?? 0) ? a : b);
+      // Kumpulkan semua menu yang diinput (>0) agar detail menampilkan semuanya, bukan cuma top 1
+      final savedIds = items.map((e) => e['menu_id'] as int).toList();
 
       await _load();
       if (!mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => DetailPrediksiScreen(menuId: topMenu.id),
+          builder: (_) => DetailPrediksiListScreen(menuIds: savedIds),
         ),
       );
       await _load();
@@ -311,6 +310,21 @@ class _StokScreenState extends State<StokScreen> {
     // DateTime.weekday: Mon=1 .. Sun=7; map to Sen..Min
     final dayLabel = idDays[_selectedDate.weekday - 1];
     return '$dayLabel, ${_formattedDate()}';
+  }
+
+  String _topMenuLabelText() {
+    if (_menus.isEmpty) return '-';
+    MenuItem? top;
+    int maxSold = -1;
+    for (final m in _menus) {
+      final s = _sold[m.id] ?? 0;
+      if (s > maxSold) {
+        maxSold = s;
+        top = m;
+      }
+    }
+    if (top == null || maxSold <= 0) return _menus.first.name;
+    return '${top.name} ($maxSold porsi)';
   }
 
   void _showNotifications() {
@@ -556,6 +570,7 @@ class _StokScreenState extends State<StokScreen> {
                         totalTarget: _targetTotal(),
                         efficiency: _efficiency(),
                         isHoliday: _isHoliday,
+                        topMenuLabel: _topMenuLabelText(),
                       ),
                       const SizedBox(height: 20),
                       _SaveButtons(
@@ -1130,19 +1145,21 @@ class _AiSummaryCard extends StatelessWidget {
     required this.totalTarget,
     required this.efficiency,
     required this.isHoliday,
+    required this.topMenuLabel,
   });
 
   final int totalSold;
   final int totalTarget;
   final double efficiency;
   final bool isHoliday;
+  final String topMenuLabel;
 
   @override
   Widget build(BuildContext context) {
     final percent = efficiency.clamp(0, 100).toDouble();
     final bestMenuLabel = isHoliday
         ? 'Warung ditandai libur hari ini.'
-        : 'Menu Terlaris: ${_topMenuLabel()}';
+        : 'Menu Terlaris: $topMenuLabel';
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1253,10 +1270,6 @@ class _AiSummaryCard extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  String _topMenuLabel() {
-    return 'Nasi Goreng (+12% vs minggu lalu)';
   }
 }
 

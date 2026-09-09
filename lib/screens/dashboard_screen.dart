@@ -4,6 +4,7 @@ import '../constants/app_colors.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/location_service.dart';
+import '../services/prediction_service.dart';
 import '../services/sales_service.dart';
 import '../services/weather_service.dart';
 import 'detail_prediksi_screen.dart';
@@ -27,33 +28,119 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   bool _isOpen = true;
   bool _hasLoggedToday = false;
+  bool _dashLoading = true;
+  List<Map<String, String>> _recommendations = [];
+  double _efficiency = 0;
+  int _totalSold = 0;
+  int _totalTarget = 0;
+  bool _showEventAlert = false;
+  String _eventTitle = 'Ada event sekitar lokasi';
+  String _eventSubtitle = 'Estimasi pengunjung bertambah';
 
-  static const List<Map<String, String>> _recommendations = [
-    {
-      'name': 'Nasi Goreng Spesial',
-      'category': 'Makanan Utama',
-      'porsi': '45',
-      'alasan': 'Puncak penjualan sore & ada event sekitar lokasi',
-    },
-    {
-      'name': 'Ayam Geprek',
-      'category': 'Makanan Utama',
-      'porsi': '32',
-      'alasan': 'Tren naik 12% dari 7 hari terakhir',
-    },
-    {
-      'name': 'Bakso Sapi',
-      'category': 'Mie & Bakso',
-      'porsi': '28',
-      'alasan': 'Cuaca cerah, peluang kunjungan sore meningkat',
-    },
-    {
-      'name': 'Es Teh Manis',
-      'category': 'Minuman',
-      'porsi': '60',
-      'alasan': 'Porsi minuman mengikuti ±1,3x porsi menu utama',
-    },
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadDashboard();
+  }
+
+  String _dateOnly(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  Future<void> _loadDashboard() async {
+    setState(() => _dashLoading = true);
+    try {
+      final menus = await SalesService.fetchMenus();
+      final todayStr = _dateOnly(DateTime.now());
+      final todayRec = await SalesService.fetchByDate(todayStr);
+
+      // Hitung efisiensi murni DB: totalSold / totalTarget dari menus + record
+      int totalTarget = menus.fold(0, (s, m) => s + m.targetPortions);
+      int totalSold = 0;
+      if (todayRec != null) {
+        for (final e in todayRec.items.entries) {
+          totalSold += e.value;
+        }
+        // fallback: jika record kosong, gunakan soldToday dari menus (jarang)
+        if (todayRec.items.isEmpty) {
+          totalSold = menus.fold(0, (s, m) => s + m.soldToday);
+        }
+      } else {
+        totalSold = menus.fold(0, (s, m) => s + m.soldToday);
+      }
+      final eff = totalTarget > 0 ? totalSold / totalTarget * 100 : 0.0;
+      final hasLogged = todayRec != null && todayRec.items.isNotEmpty;
+
+      // Rekomendasi murni DB: ambil prediksi per menu (max 4)
+      List<Map<String, String>> recs = [];
+      bool showEvent = false;
+      String evTitle = _eventTitle;
+      String evSub = _eventSubtitle;
+      try {
+        final toFetch = menus.take(4).toList();
+        final preds = await Future.wait(toFetch.map((m) async {
+          try {
+            return await PredictionService.fetchDetail(m.id);
+          } catch (_) {
+            return null;
+          }
+        }));
+        for (int i = 0; i < toFetch.length; i++) {
+          final m = toFetch[i];
+          final p = preds[i];
+          if (p != null) {
+            final alasan = p.factors.isNotEmpty
+                ? p.factors.reduce((a, b) => a.delta.abs() > b.delta.abs() ? a : b).description
+                : 'Rekomendasi AI untuk ${m.name}';
+            recs.add({
+              'name': m.name,
+              'category': m.category,
+              'porsi': p.recommendedPortions.toString(),
+              'alasan': alasan,
+            });
+            // cek event
+            for (final f in p.factors) {
+              if (f.key == 'event' && f.delta.abs() > 0) {
+                showEvent = true;
+                evTitle = f.label.contains('Event') ? 'Ada event sekitar lokasi' : f.label;
+                evSub = f.description;
+              }
+            }
+          } else {
+            recs.add({
+              'name': m.name,
+              'category': m.category,
+              'porsi': m.targetPortions.toString(),
+              'alasan': 'Target awal ${m.targetPortions} porsi',
+            });
+          }
+        }
+      } catch (_) {
+        // fallback: dari menus saja (masih murni DB)
+        recs = menus.take(4).map((m) => {
+              'name': m.name,
+              'category': m.category,
+              'porsi': m.targetPortions.toString(),
+              'alasan': 'Target ${m.targetPortions} porsi',
+            }).toList();
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _recommendations = recs;
+        _efficiency = eff;
+        _totalSold = totalSold;
+        _totalTarget = totalTarget;
+        _hasLoggedToday = hasLogged;
+        _showEventAlert = showEvent;
+        _eventTitle = evTitle;
+        _eventSubtitle = evSub;
+        _dashLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _dashLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -128,10 +215,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   },
                 ),
                 const SizedBox(height: 16),
-                if (!_hasLoggedToday) ...[
+                if (!_hasLoggedToday && !_dashLoading) ...[
                   _ReminderCard(
                     onCatatSekarang: () {
-                      setState(() => _hasLoggedToday = true);
+                      final go = widget.onGoToStok;
+                      if (go != null) {
+                        go();
+                      } else {
+                        Navigator.of(context).push(MaterialPageRoute(builder: (_) => const StokScreen()));
+                      }
                     },
                   ),
                   const SizedBox(height: 12),
@@ -143,34 +235,63 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 const SizedBox(height: 10),
                 _WeatherCard(),
                 const SizedBox(height: 12),
-                const _EventAlertCard(),
-                const SizedBox(height: 24),
+                if (_showEventAlert) ...[
+                  _EventAlertCard(title: _eventTitle, subtitle: _eventSubtitle),
+                  const SizedBox(height: 12),
+                ],
+                const SizedBox(height: 12),
                 const _SectionLabel(
                   label: 'KINERJA HARI INI',
                   icon: Icons.insights,
                 ),
                 const SizedBox(height: 10),
-                const _EfficiencyCard(),
+                _dashLoading
+                    ? Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(22), border: Border.all(color: AppColors.outline)),
+                        child: const Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary))),
+                      )
+                    : _EfficiencyCard(
+                        efficiency: _efficiency,
+                        totalSold: _totalSold,
+                        totalTarget: _totalTarget,
+                      ),
                 const SizedBox(height: 24),
                 const _SectionLabel(
                   label: 'REKOMENDASI STOK AI',
                   icon: Icons.auto_awesome,
                 ),
                 const SizedBox(height: 10),
-                _StockRecommendationCard(
-                  recommendations: _recommendations,
-                  onTapRecommendation: (item) {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => DetailPrediksiScreen(
-                          menuName: item['name']!,
-                          porsi: item['porsi']!,
-                          alasan: item['alasan']!,
-                        ),
-                      ),
-                    );
-                  },
-                ),
+                _dashLoading
+                    ? Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(22), border: Border.all(color: AppColors.outline)),
+                        child: const Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary))),
+                      )
+                    : _recommendations.isEmpty
+                        ? Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(22), border: Border.all(color: AppColors.outline)),
+                            child: Row(children: [
+                              Icon(Icons.inbox_outlined, size: 20, color: AppColors.mutedText),
+                              SizedBox(width: 8),
+                              Expanded(child: Text('Belum ada menu — tambah di tab Stok untuk melihat rekomendasi AI.', style: TextStyle(color: AppColors.mutedText, fontSize: 13))),
+                            ]),
+                          )
+                        : _StockRecommendationCard(
+                            recommendations: _recommendations,
+                            onTapRecommendation: (item) {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => DetailPrediksiScreen(
+                                    menuName: item['name']!,
+                                    porsi: item['porsi']!,
+                                    alasan: item['alasan']!,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
                 const SizedBox(height: 24),
                 Center(
                   child: Text(
@@ -966,7 +1087,9 @@ class _WeatherError extends StatelessWidget {
 
 // ─── Event Alert Card (4px left accent strip) ────────────────
 class _EventAlertCard extends StatelessWidget {
-  const _EventAlertCard();
+  const _EventAlertCard({this.title = 'Ada event sekitar lokasi', this.subtitle = 'Estimasi pengunjung bertambah'});
+  final String title;
+  final String subtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -1041,7 +1164,7 @@ class _EventAlertCard extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Ada konser di sekitar GBK besok',
+                                title,
                                 style: GoogleFonts.plusJakartaSans(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w700,
@@ -1050,14 +1173,11 @@ class _EventAlertCard extends StatelessWidget {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                'Estimasi +1.200 pengunjung',
+                                subtitle,
                                 style: GoogleFonts.plusJakartaSans(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w400,
                                   color: AppColors.mutedText,
-                                  fontFeatures: const [
-                                    FontFeature.tabularFigures(),
-                                  ],
                                 ),
                               ),
                             ],
@@ -1097,10 +1217,28 @@ class _EventAlertCard extends StatelessWidget {
 
 // ─── Efficiency Score (Progress Ring) ────────────────────────
 class _EfficiencyCard extends StatelessWidget {
-  const _EfficiencyCard();
+  const _EfficiencyCard({required this.efficiency, required this.totalSold, required this.totalTarget});
+  final double efficiency;
+  final int totalSold;
+  final int totalTarget;
+
+  String _idr(int v) {
+    if (v <= 0) return 'Rp0';
+    final s = v.toString();
+    final buf = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      final pos = s.length - i;
+      buf.write(s[i]);
+      if (pos > 1 && pos % 3 == 1) buf.write('.');
+    }
+    return 'Rp${buf.toString()}';
+  }
 
   @override
   Widget build(BuildContext context) {
+    final eff = efficiency.clamp(0, 100).toDouble();
+    final hemat = totalSold * 15000; // estimasi murni DB: porsi terselamatkan x harga rata-rata
+    final sisa = (totalTarget - totalSold).clamp(0, 1 << 31);
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -1124,7 +1262,7 @@ class _EfficiencyCard extends StatelessWidget {
               fit: StackFit.expand,
               children: [
                 CircularProgressIndicator(
-                  value: 0.88,
+                  value: eff / 100,
                   strokeWidth: 11,
                   strokeCap: StrokeCap.round,
                   backgroundColor: AppColors.tonalBadge,
@@ -1135,7 +1273,7 @@ class _EfficiencyCard extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        '88%',
+                        '${eff.toStringAsFixed(eff.truncateToDouble() == eff ? 0 : 1)}%',
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 26,
                           fontWeight: FontWeight.w700,
@@ -1174,11 +1312,21 @@ class _EfficiencyCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Hari Ini',
+                  totalTarget > 0 ? '$totalSold/$totalTarget porsi' : 'Belum ada target',
                   style: GoogleFonts.plusJakartaSans(
-                    fontSize: 16,
+                    fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: AppColors.textPrimary,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Hari Ini • sisa $sisa porsi',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w400,
+                    color: AppColors.mutedText,
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -1201,7 +1349,7 @@ class _EfficiencyCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 5),
                       Text(
-                        '+Rp 84.000',
+                        _idr(hemat),
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
@@ -1214,7 +1362,7 @@ class _EfficiencyCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Hemat biaya operasional',
+                  hemat > 0 ? 'Estimasi nilai terselamatkan' : 'Mulai catat penjualan hari ini',
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 11,
                     fontWeight: FontWeight.w400,
