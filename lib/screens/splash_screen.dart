@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
+import '../services/auth_service.dart';
+import 'main_shell.dart';
 import 'onboarding_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -43,14 +45,19 @@ class _SplashScreenState extends State<SplashScreen>
       end: Offset.zero,
     ).animate(_fadeIn);
 
-    // Auto navigate ke onboarding setelah 3 detik
-    _timer = Timer(const Duration(seconds: 3), _navigateToOnboarding);
+    // Auto navigate setelah 3 detik: sesi tersimpan → langsung Beranda,
+    // kalau tidak → onboarding seperti biasa.
+    _timer = Timer(const Duration(seconds: 3), _navigateNext);
   }
 
-  void _navigateToOnboarding() {
+  void _navigateNext() {
     if (!mounted) return;
+    final loggedIn = AuthService.currentSession.value != null;
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const OnboardingScreen()),
+      MaterialPageRoute(
+        builder: (_) =>
+            loggedIn ? const MainShell() : const OnboardingScreen(),
+      ),
     );
   }
 

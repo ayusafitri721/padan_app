@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_service.dart';
 
@@ -23,6 +25,13 @@ class AuthUser {
         phoneOrEmail: json['phone_or_email'] as String,
         businessType: json['business_type'] as String,
       );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'warung_name': warungName,
+        'phone_or_email': phoneOrEmail,
+        'business_type': businessType,
+      };
 }
 
 class AuthResult {
@@ -35,7 +44,45 @@ class AuthResult {
 class AuthService {
   AuthService._();
 
+  static const _sessionKey = 'padan_session_v1';
+
   static final ValueNotifier<AuthResult?> currentSession = ValueNotifier(null);
+
+  /// Dipanggil sekali saat app start (lihat main.dart) — mengembalikan
+  /// sesi tersimpan bila ada sehingga user langsung masuk Beranda.
+  /// Tidak pernah throw: gagal baca = dianggap belum login.
+  static Future<void> restore() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_sessionKey);
+      if (raw == null || raw.isEmpty) return;
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      final token = data['access_token'] as String?;
+      final user = data['user'] as Map<String, dynamic>?;
+      if (token == null || token.isEmpty || user == null) return;
+      currentSession.value = AuthResult(
+        token: token,
+        user: AuthUser.fromJson(user),
+      );
+    } catch (_) {
+      currentSession.value = null;
+    }
+  }
+
+  static Future<void> _persist(AuthResult result) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _sessionKey,
+        jsonEncode({
+          'access_token': result.token,
+          'user': result.user.toJson(),
+        }),
+      );
+    } catch (_) {
+      // Penyimpanan lokal gagal — sesi memori tetap jalan.
+    }
+  }
 
   static Future<AuthResult> register({
     required String warungName,
@@ -65,6 +112,10 @@ class AuthService {
 
   static void logout() {
     currentSession.value = null;
+    SharedPreferences.getInstance().then(
+      (prefs) => prefs.remove(_sessionKey),
+      onError: (_) {},
+    );
   }
 
   static AuthResult _setSession(Map<String, dynamic> data) {
@@ -73,6 +124,8 @@ class AuthService {
       user: AuthUser.fromJson(data['user'] as Map<String, dynamic>),
     );
     currentSession.value = result;
+    // Fire-and-forget: login tetap sukses walau penyimpanan gagal.
+    unawaited(_persist(result));
     return result;
   }
 }
