@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../constants/app_colors.dart';
+import '../services/location_service.dart';
 import '../services/prediction_service.dart';
 
 /// Halaman Detail Prediksi AI.
@@ -50,13 +51,20 @@ class _DetailPrediksiScreenState extends State<DetailPrediksiScreen> {
       _error = null;
     });
     try {
-      final prediction = await PredictionService.fetchDetail(id);
+      // Lokasi terakhir dulu (instan), baru fix GPS — backend pakai default
+      // bila keduanya gagal.
+      final location = await LocationService.getBestLocation();
+      final prediction = await PredictionService.fetchDetail(
+        id,
+        latitude: location?.latitude,
+        longitude: location?.longitude,
+      );
       if (!mounted) return;
       setState(() {
         _prediction = prediction;
         _loading = false;
       });
-    } on Exception catch (e) {
+    } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = e.toString();
@@ -246,7 +254,10 @@ class _DetailPrediksiScreenState extends State<DetailPrediksiScreen> {
         const SizedBox(height: 12),
         _RecipeCard(prediction: prediction),
         const SizedBox(height: 12),
-        _FactorsCard(factors: prediction.factors),
+        _FactorsCard(
+          factors: prediction.factors,
+          weatherLocation: prediction.weatherLocation,
+        ),
         const SizedBox(height: 12),
         _IngredientsCard(ingredients: prediction.ingredients),
         const SizedBox(height: 12),
@@ -327,7 +338,9 @@ class _MenuHeader extends StatelessWidget {
               const Icon(Icons.data_usage, size: 16, color: AppColors.primary),
               const SizedBox(width: 6),
               Text(
-                'Akurasi Model ${akurasi.toStringAsFixed(1)}%',
+                akurasi > 0
+                    ? 'Akurasi Model ${akurasi.toStringAsFixed(1)}%'
+                    : 'Belum ada riwayat — memakai baseline',
                 style: GoogleFonts.plusJakartaSans(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -527,9 +540,10 @@ class _RangeItem extends StatelessWidget {
 
 // ─── Faktor Analisis Multidimensi ───────────────────────────
 class _FactorsCard extends StatelessWidget {
-  const _FactorsCard({required this.factors});
+  const _FactorsCard({required this.factors, this.weatherLocation = ''});
 
   final List<PredictionFactor> factors;
+  final String weatherLocation;
 
   @override
   Widget build(BuildContext context) {
@@ -561,6 +575,29 @@ class _FactorsCard extends StatelessWidget {
               color: AppColors.textPrimary,
             ),
           ),
+          if (weatherLocation.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                const Icon(
+                  Icons.location_on,
+                  size: 13,
+                  color: AppColors.secondary,
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    'Cuaca: $weatherLocation (BMKG)',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.secondary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 12),
           for (int i = 0; i < factors.length; i++) ...[
             _FactorRow(factor: factors[i]),
@@ -953,12 +990,12 @@ class _KalibrasiCardState extends State<_KalibrasiCard> {
         SnackBar(
           content: Text(
             _value == widget.recommended
-                ? 'Terkunci: $_value porsi (rekomendasi AI). Target besok tersinkron ke dapur.'
-                : 'Terkunci: $_value porsi. Kalibrasi manual diterapkan & tersinkron ke dapur.',
+                ? 'Terkunci: $_value porsi (rekomendasi AI). Target menu diperbarui.'
+                : 'Terkunci: $_value porsi. Kalibrasi manual diterapkan & target menu diperbarui.',
           ),
         ),
       );
-    } on Exception catch (e) {
+    } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.toString())),

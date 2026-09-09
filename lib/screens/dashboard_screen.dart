@@ -4,6 +4,7 @@ import '../constants/app_colors.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/location_service.dart';
+import '../services/prediction_service.dart';
 import '../services/sales_service.dart';
 import '../services/weather_service.dart';
 import 'detail_prediksi_screen.dart';
@@ -28,32 +29,191 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _isOpen = true;
   bool _hasLoggedToday = false;
 
-  static const List<Map<String, String>> _recommendations = [
-    {
-      'name': 'Nasi Goreng Spesial',
-      'category': 'Makanan Utama',
-      'porsi': '45',
-      'alasan': 'Puncak penjualan sore & ada event sekitar lokasi',
-    },
-    {
-      'name': 'Ayam Geprek',
-      'category': 'Makanan Utama',
-      'porsi': '32',
-      'alasan': 'Tren naik 12% dari 7 hari terakhir',
-    },
-    {
-      'name': 'Bakso Sapi',
-      'category': 'Mie & Bakso',
-      'porsi': '28',
-      'alasan': 'Cuaca cerah, peluang kunjungan sore meningkat',
-    },
-    {
-      'name': 'Es Teh Manis',
-      'category': 'Minuman',
-      'porsi': '60',
-      'alasan': 'Porsi minuman mengikuti ±1,3x porsi menu utama',
-    },
-  ];
+  List<TodayRecommendation>? _recs;
+  bool _recsLoading = true;
+  String? _recsError;
+
+  DailySalesRecord? _today;
+  bool _todayLoading = true;
+
+  /// Sabtu/Minggu — satu-satunya hari faktor event backend aktif.
+  bool get _isWeekend {
+    final w = DateTime.now().weekday;
+    return w == DateTime.saturday || w == DateTime.sunday;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRecs();
+    _loadToday();
+  }
+
+  Future<void> _loadRecs() async {
+    // Tahap 1: tampil kilat tanpa tunggu fix GPS (lokasi sesi terakhir,
+    // atau default bila belum pernah dapat).
+    final first = await LocationService.getLastKnownLocation() ??
+        LocationService.lastResolved;
+    if (!mounted) return;
+    await _fetchRecs(first);
+    if (!mounted) return;
+    // Tahap 2: sempurnakan diam-diam dengan lokasi presisi (shared 1x/sesi).
+    final precise = await LocationService.getSharedLocation();
+    if (!mounted || precise == null) return;
+    if (first != null && first.isCloseTo(precise)) return;
+    await _fetchRecs(precise, silent: true);
+  }
+
+  Future<void> _fetchRecs(DeviceLocation? loc, {bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _recsLoading = _recs == null;
+        _recsError = null;
+      });
+    }
+    try {
+      final recs = await PredictionService.fetchToday(
+        latitude: loc?.latitude,
+        longitude: loc?.longitude,
+      );
+      if (!mounted) return;
+      setState(() {
+        _recs = recs;
+        _recsLoading = false;
+        _recsError = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      // Abaikan error refresh diam-diam bila data sudah tampil.
+      if (silent && _recs != null) return;
+      setState(() {
+        _recsError =
+            e is ApiException ? e.message : 'Gagal memuat rekomendasi.';
+        _recsLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadToday() async {
+    try {
+      final record = await SalesService.fetchToday();
+      if (!mounted) return;
+      setState(() {
+        _today = record;
+        _todayLoading = false;
+      });
+    } on Exception {
+      if (!mounted) return;
+      setState(() => _todayLoading = false);
+    }
+  }
+
+  Widget _buildRecommendationSection() {
+    if (_recsLoading) {
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 28),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: AppColors.outline, width: 1),
+        ),
+        child: const Center(
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(
+              color: AppColors.primary,
+              strokeWidth: 2.5,
+            ),
+          ),
+        ),
+      );
+    }
+    if (_recsError != null) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: AppColors.outline, width: 1),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                _recsError!,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13,
+                  color: AppColors.mutedText,
+                ),
+              ),
+            ),
+            TextButton(onPressed: _loadRecs, child: const Text('Coba Lagi')),
+          ],
+        ),
+      );
+    }
+    final recs = _recs ?? [];
+    if (recs.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: AppColors.outline, width: 1),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: AppColors.tonalBadge,
+                borderRadius: BorderRadius.circular(13),
+              ),
+              child: const Icon(
+                Icons.analytics,
+                size: 24,
+                color: AppColors.primary,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Belum ada menu. Tambahkan menu di tab Stok agar AI bisa memberi rekomendasi.',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13,
+                  color: AppColors.textPrimary,
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return _StockRecommendationCard(
+      recommendations: [
+        for (final r in recs)
+          {
+            'menuId': r.menuId.toString(),
+            'name': r.menuName,
+            'category': r.category,
+            'porsi': r.recommendedPortions.toString(),
+            'alasan': r.reason,
+          },
+      ],
+      onTapRecommendation: (item) {
+        final menuId = int.tryParse(item['menuId'] ?? '');
+        if (menuId == null) return;
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => DetailPrediksiScreen(menuId: menuId),
+          ),
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -143,34 +303,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 const SizedBox(height: 10),
                 _WeatherCard(),
                 const SizedBox(height: 12),
-                const _EventAlertCard(),
-                const SizedBox(height: 24),
+                // Kartu event hanya relevan akhir pekan (Sabtu/Minggu) —
+                // selaras dengan faktor event backend (predictions.py).
+                // Di hari kerja disembunyikan agar tidak jadi klaim palsu.
+                if (_isWeekend) const _EventAlertCard(),
+                if (_isWeekend) const SizedBox(height: 12),
+                const SizedBox(height: 12),
                 const _SectionLabel(
                   label: 'KINERJA HARI INI',
                   icon: Icons.insights,
                 ),
                 const SizedBox(height: 10),
-                const _EfficiencyCard(),
+                _EfficiencyCard(
+                  record: _today,
+                  loading: _todayLoading,
+                  onCatat: widget.onGoToStok,
+                ),
                 const SizedBox(height: 24),
                 const _SectionLabel(
                   label: 'REKOMENDASI STOK AI',
                   icon: Icons.auto_awesome,
                 ),
                 const SizedBox(height: 10),
-                _StockRecommendationCard(
-                  recommendations: _recommendations,
-                  onTapRecommendation: (item) {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => DetailPrediksiScreen(
-                          menuName: item['name']!,
-                          porsi: item['porsi']!,
-                          alasan: item['alasan']!,
-                        ),
-                      ),
-                    );
-                  },
-                ),
+                _buildRecommendationSection(),
                 const SizedBox(height: 24),
                 Center(
                   child: Text(
@@ -653,7 +808,27 @@ class _WeatherCardState extends State<_WeatherCard> {
   @override
   void initState() {
     super.initState();
-    _load();
+    _loadFast();
+  }
+
+  /// Paint kilat: lokasi terakhir tersimpan (instan) → tampil dalam
+  /// <1 detik. Lalu fix GPS presisi menyusul diam-diam bila bergeser.
+  Future<void> _loadFast() async {
+    final first = await LocationService.getLastKnownLocation() ??
+        LocationService.lastResolved;
+    if (!mounted) return;
+    await _fetch(
+      latitude: first?.latitude,
+      longitude: first?.longitude,
+      adm4: first == null ? WeatherService.defaultAdm4 : null,
+    );
+    if (!mounted) return;
+    // Refine diam-diam via lokasi shared (1x request GPS per sesi).
+    final precise = await LocationService.getSharedLocation();
+    if (!mounted) return;
+    if (precise == null) return;
+    if (first != null && first.isCloseTo(precise)) return;
+    await _fetch(latitude: precise.latitude, longitude: precise.longitude);
   }
 
   Future<void> _load() async {
@@ -663,20 +838,46 @@ class _WeatherCardState extends State<_WeatherCard> {
     });
     try {
       final location = await LocationService.getCurrentLocation();
-      final data = await WeatherService.fetchWeather(
+      await _fetch(
         latitude: location?.latitude,
         longitude: location?.longitude,
-        adm4: location == null
-            ? WeatherService.defaultAdm4
-            : null,
+        adm4: location == null ? WeatherService.defaultAdm4 : null,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e is ApiException
+            ? e.message
+            : 'Tidak dapat terhubung ke server cuaca.';
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _fetch({
+    double? latitude,
+    double? longitude,
+    String? adm4,
+  }) async {
+    setState(() {
+      _loading = _weather == null;
+      _error = null;
+    });
+    try {
+      final data = await WeatherService.fetchWeather(
+        latitude: latitude,
+        longitude: longitude,
+        adm4: adm4,
       );
       if (!mounted) return;
       setState(() {
         _weather = data;
         _loading = false;
       });
-    } on Exception catch (e) {
+    } catch (e) {
       if (!mounted) return;
+      // Abaikan error refresh diam-diam bila data lama sudah tampil.
+      if (_weather != null) return;
       setState(() {
         _error = e is ApiException
             ? e.message
@@ -896,6 +1097,14 @@ class _WeatherContent extends StatelessWidget {
     if (parsed == null) return 'diperbarui baru saja';
     final now = DateTime.now();
     final diff = now.difference(parsed);
+    if (diff.inMinutes < -1) {
+      // Stempel BMKG = jam BERLAKU slot prakiraan (bisa 1–2 jam ke depan,
+      // bukan waktu fetch) → tampilkan jamnya, bukan "minus X lalu".
+      final hh = parsed.hour.toString().padLeft(2, '0');
+      final mm = parsed.minute.toString().padLeft(2, '0');
+      return 'prakiraan pukul $hh:$mm';
+    }
+    if (diff.inMinutes < 1) return 'diperbarui baru saja';
     if (diff.inMinutes < 60) {
       return 'diperbarui ${diff.inMinutes} menit lalu';
     }
@@ -1016,7 +1225,7 @@ class _EventAlertCard extends StatelessWidget {
                           ),
                           SizedBox(width: 4),
                           Text(
-                            'Event Lokal',
+                            'Event Lokal • Estimasi',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
@@ -1041,7 +1250,7 @@ class _EventAlertCard extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Ada konser di sekitar GBK besok',
+                                'Potensi keramaian di sekitar GBK',
                                 style: GoogleFonts.plusJakartaSans(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w700,
@@ -1097,10 +1306,105 @@ class _EventAlertCard extends StatelessWidget {
 
 // ─── Efficiency Score (Progress Ring) ────────────────────────
 class _EfficiencyCard extends StatelessWidget {
-  const _EfficiencyCard();
+  const _EfficiencyCard({
+    required this.record,
+    required this.loading,
+    this.onCatat,
+  });
+
+  /// Record penjualan hari ini (null bila belum ada catatan).
+  final DailySalesRecord? record;
+  final bool loading;
+  final VoidCallback? onCatat;
 
   @override
   Widget build(BuildContext context) {
+    if (loading) {
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 40),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: AppColors.outline, width: 1),
+        ),
+        child: const Center(
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(
+              color: AppColors.primary,
+              strokeWidth: 2.5,
+            ),
+          ),
+        ),
+      );
+    }
+    final rec = record;
+    if (rec == null || rec.totalTarget == 0) {
+      return Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: AppColors.outline, width: 1),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0A29253F),
+              blurRadius: 10,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: AppColors.tonalBadge,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Icon(
+                Icons.edit_note_outlined,
+                size: 26,
+                color: AppColors.primary,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Belum ada catatan hari ini',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Catat penjualan di tab Stok.',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12,
+                      color: AppColors.mutedText,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (onCatat != null)
+              TextButton(onPressed: onCatat, child: const Text('Catat')),
+          ],
+        ),
+      );
+    }
+    final percent = rec.efficiency.clamp(0, 100).toDouble();
+    final percentLabel = percent >= 100
+        ? '100%'
+        : '${percent.toStringAsFixed(percent.truncateToDouble() == percent ? 0 : 1)}%';
+    final remaining = rec.remaining;
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -1124,7 +1428,7 @@ class _EfficiencyCard extends StatelessWidget {
               fit: StackFit.expand,
               children: [
                 CircularProgressIndicator(
-                  value: 0.88,
+                  value: percent / 100,
                   strokeWidth: 11,
                   strokeCap: StrokeCap.round,
                   backgroundColor: AppColors.tonalBadge,
@@ -1135,7 +1439,7 @@ class _EfficiencyCard extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        '88%',
+                        percentLabel,
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 26,
                           fontWeight: FontWeight.w700,
@@ -1195,13 +1499,15 @@ class _EfficiencyCard extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const Icon(
-                        Icons.savings,
+                        Icons.inventory_2_outlined,
                         size: 15,
                         color: AppColors.primary,
                       ),
                       const SizedBox(width: 5),
                       Text(
-                        '+Rp 84.000',
+                        remaining > 0
+                            ? 'Sisa $remaining porsi'
+                            : 'Ludes terjual!',
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
@@ -1214,7 +1520,7 @@ class _EfficiencyCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Hemat biaya operasional',
+                  '${rec.totalSold} dari ${rec.totalTarget} porsi terserap',
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 11,
                     fontWeight: FontWeight.w400,
@@ -1291,7 +1597,7 @@ class _StockRecommendationCardState extends State<_StockRecommendationCard> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Prophet / XGBoost • Hari ini',
+                          'PADAN Engine • Hari ini',
                           style: GoogleFonts.plusJakartaSans(
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
