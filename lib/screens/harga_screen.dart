@@ -21,7 +21,7 @@ class _HargaScreenState extends State<HargaScreen> {
   // editable state (mirrors config when loaded)
   bool _enabled = true;
   double _maxDisc = 35;
-  TimeOfDay _start = const TimeOfDay(hour: 20, minute: 30);
+  TimeOfDay _closing = const TimeOfDay(hour: 22, minute: 0);
   bool _broadcast = true;
 
   @override
@@ -47,11 +47,11 @@ class _HargaScreenState extends State<HargaScreen> {
         _preview = prev;
         _enabled = cfg.isEnabled;
         _maxDisc = cfg.maxDiscount.toDouble();
-        _start = _parseTime(cfg.startTime);
+        _closing = _parseTime(cfg.closingTime);
         _broadcast = cfg.broadcastWa;
         _loading = false;
       });
-    } on Exception catch (e) {
+    } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = e is ApiException ? e.message : 'Gagal memuat konfigurasi harga.';
@@ -62,9 +62,17 @@ class _HargaScreenState extends State<HargaScreen> {
 
   TimeOfDay _parseTime(String s) {
     final parts = s.split(':');
-    final h = int.tryParse(parts[0]) ?? 20;
-    final m = int.tryParse(parts.length > 1 ? parts[1] : '30') ?? 30;
+    final h = int.tryParse(parts[0]) ?? 22;
+    final m = int.tryParse(parts.length > 1 ? parts[1] : '0') ?? 0;
     return TimeOfDay(hour: h, minute: m);
+  }
+
+  /// Jam mulai intervensi = tutup − 90 menit (cermin logika backend).
+  String _interventionStr() {
+    final total = (_closing.hour * 60 + _closing.minute - 90) % (24 * 60);
+    final h = (total ~/ 60).toString().padLeft(2, '0');
+    final m = (total % 60).toString().padLeft(2, '0');
+    return '$h:$m';
   }
 
   String _timeStr(TimeOfDay t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
@@ -83,12 +91,12 @@ class _HargaScreenState extends State<HargaScreen> {
   Future<void> _pickTime() async {
     final picked = await showTimePicker(
       context: context,
-      initialTime: _start,
-      helpText: 'Jam Mulai Intervensi',
+      initialTime: _closing,
+      helpText: 'Jam Tutup Warung',
       cancelText: 'Batal',
       confirmText: 'Pilih',
     );
-    if (picked != null) setState(() => _start = picked);
+    if (picked != null) setState(() => _closing = picked);
   }
 
   Future<void> _save() async {
@@ -97,7 +105,7 @@ class _HargaScreenState extends State<HargaScreen> {
       final cfg = await PricingService.saveConfig(
         isEnabled: _enabled,
         maxDiscount: _maxDisc.round(),
-        startTime: _timeStr(_start),
+        closingTime: _timeStr(_closing),
         broadcastWa: _broadcast,
       );
       PricingPreview? prev;
@@ -110,7 +118,7 @@ class _HargaScreenState extends State<HargaScreen> {
         _preview = prev;
       });
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Konfigurasi harga tersimpan.')));
-    } on Exception catch (e) {
+    } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
     } finally {
@@ -315,9 +323,11 @@ class _HargaScreenState extends State<HargaScreen> {
                           Row(children: [
                             Expanded(
                               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                Text('Jam Mulai Intervensi', style: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                                Text('Jam Tutup Warung', style: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
                                 const SizedBox(height: 4),
-                                Text('${_timeStr(_start)} WIB', style: GoogleFonts.plusJakartaSans(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.primary, fontFeatures: const [FontFeature.tabularFigures()])),
+                                Text('${_timeStr(_closing)} WIB', style: GoogleFonts.plusJakartaSans(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.primary, fontFeatures: const [FontFeature.tabularFigures()])),
+                                const SizedBox(height: 2),
+                                Text('Diskon mulai ${_interventionStr()} WIB', style: GoogleFonts.plusJakartaSans(fontSize: 11, color: AppColors.mutedText, fontFeatures: const [FontFeature.tabularFigures()])),
                               ]),
                             ),
                             OutlinedButton(
