@@ -1,6 +1,8 @@
 from datetime import date
+from pathlib import Path
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user_id
@@ -10,12 +12,19 @@ from .. import schemas
 
 router = APIRouter(prefix="/api/v1/sales", tags=["sales"])
 
+# Folder penyimpanan foto menu (disajikan statis di /uploads oleh main.py)
+UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent / "uploads"
+ALLOWED_PHOTO_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
+MAX_PHOTO_BYTES = 3 * 1024 * 1024  # 3 MB
+
 # Menu contoh awal untuk warung yang baru mendaftar (belum punya data menu di DB).
+# accuracy=0 artinya belum ada riwayat terukur (jujur) — formula prediksi
+# memakai baseline internal, dan UI menampilkan "Belum ada riwayat".
 _DEFAULT_MENUS = [
-    {"name": "Nasi Goreng Spesial", "category": "Makanan Utama", "target_portions": 50, "accuracy": 96},
-    {"name": "Ayam Geprek", "category": "Makanan Utama", "target_portions": 35, "accuracy": 92},
-    {"name": "Bakso Sapi", "category": "Mie & Bakso", "target_portions": 30, "accuracy": 88},
-    {"name": "Es Teh Manis", "category": "Minuman", "target_portions": 60, "accuracy": 100},
+    {"name": "Nasi Goreng Spesial", "category": "Makanan Utama", "target_portions": 50, "accuracy": 0},
+    {"name": "Ayam Geprek", "category": "Makanan Utama", "target_portions": 35, "accuracy": 0},
+    {"name": "Bakso Sapi", "category": "Mie & Bakso", "target_portions": 30, "accuracy": 0},
+    {"name": "Es Teh Manis", "category": "Minuman", "target_portions": 60, "accuracy": 0},
 ]
 
 
@@ -105,6 +114,81 @@ def delete_menu(
     menu.is_active = False
     db.commit()
     return None
+
+
+def _remove_old_photo(image_url: str | None) -> None:
+    """Hapus file foto lama bila masih tersimpan lokal."""
+    if not image_url or not image_url.startswith("/uploads/"):
+        return
+    try:
+        old = UPLOAD_DIR / Path(image_url).name
+        if old.is_file():
+            old.unlink()
+    except OSError:
+        pass
+
+
+@router.post("/menus/{menu_id}/photo", response_model=schemas.MenuOut)
+async def upload_menu_photo(
+    menu_id: int,
+    photo: UploadFile = File(...),
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Upload/ganti foto menu (JPG/PNG/WebP, maks 3 MB)."""
+    menu = (
+        db.query(Menu)
+        .filter(Menu.id == menu_id, Menu.user_id == user_id)
+        .first()
+    )
+    if not menu:
+        raise HTTPException(status_code=404, detail="Menu tidak ditemukan.")
+
+    ext = Path(photo.filename or "").suffix.lower()
+    if ext not in ALLOWED_PHOTO_EXTS:
+        raise HTTPException(
+            status_code=422,
+            detail="Format foto harus JPG, PNG, atau WebP.",
+        )
+    content = await photo.read()
+    if not content:
+        raise HTTPException(status_code=422, detail="File foto kosong.")
+    if len(content) > MAX_PHOTO_BYTES:
+        raise HTTPException(
+            status_code=422,
+            detail="Ukuran foto maksimal 3 MB.",
+        )
+
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    filename = f"{uuid4().hex}{ext}"
+    (UPLOAD_DIR / filename).write_bytes(content)
+
+    _remove_old_photo(menu.image_url)
+    menu.image_url = f"/uploads/{filename}"
+    db.commit()
+    db.refresh(menu)
+    return menu
+
+
+@router.delete("/menus/{menu_id}/photo", response_model=schemas.MenuOut)
+def delete_menu_photo(
+    menu_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Hapus foto menu (kembali ke ikon kategori)."""
+    menu = (
+        db.query(Menu)
+        .filter(Menu.id == menu_id, Menu.user_id == user_id)
+        .first()
+    )
+    if not menu:
+        raise HTTPException(status_code=404, detail="Menu tidak ditemukan.")
+    _remove_old_photo(menu.image_url)
+    menu.image_url = None
+    db.commit()
+    db.refresh(menu)
+    return menu
 
 
 def _save_sales(

@@ -44,7 +44,7 @@ def _fetch_bmkg(adm4: str) -> dict:
             "Accept-Language": "id-ID,id;q=0.9",
         },
     )
-    with urllib.request.urlopen(request, timeout=15) as response:
+    with urllib.request.urlopen(request, timeout=8) as response:
         body = response.read().decode("utf-8")
     return json.loads(body)
 

@@ -31,7 +31,10 @@ class _MainShellState extends State<MainShell> {
             onGoToAkun: () => _goToTab(4),
           ),
           StokScreen(onGoToAkun: () => _goToTab(4)),
-          LimbahScreen(onGoToAkun: () => _goToTab(4)),
+          LimbahScreen(
+            onGoToAkun: () => _goToTab(4),
+            onGoToStok: () => _goToTab(1),
+          ),
           HargaScreen(onGoToAkun: () => _goToTab(4)),
           const ProfileScreen(),
         ],

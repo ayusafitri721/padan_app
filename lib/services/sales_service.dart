@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import 'api_service.dart';
@@ -11,6 +13,8 @@ class MenuItem {
     required this.accuracy,
     required this.soldToday,
     required this.remaining,
+    this.imageUrl,
+    this.price = 25000,
   });
 
   final int id;
@@ -20,6 +24,12 @@ class MenuItem {
   final int accuracy;
   final int soldToday;
   final int remaining;
+  final String? imageUrl;
+  final int price;
+
+  /// URL absolut foto menu, null bila belum ada (pakai ikon kategori).
+  String? get photoUrl =>
+      imageUrl == null || imageUrl!.isEmpty ? null : '${ApiService.baseUrl}$imageUrl';
 
   factory MenuItem.fromJson(Map<String, dynamic> json) => MenuItem(
         id: (json['id'] ?? 0) as int,
@@ -29,6 +39,8 @@ class MenuItem {
         accuracy: (json['accuracy'] ?? 0) as int,
         soldToday: (json['sold_today'] ?? 0) as int,
         remaining: (json['remaining'] ?? 0) as int,
+        imageUrl: json['image_url'] as String?,
+        price: (json['price'] ?? 25000) as int,
       );
 
   IconData get icon => categoryToIcon(category);
@@ -66,18 +78,21 @@ class MenuInput {
     required this.category,
     required this.targetPortions,
     this.accuracy = 0,
+    this.price = 25000,
   });
 
   final String name;
   final String category;
   final int targetPortions;
   final int accuracy;
+  final int price;
 
   Map<String, dynamic> toJson() => {
         'name': name,
         'category': category,
         'target_portions': targetPortions,
         'accuracy': accuracy,
+        'price': price,
       };
 }
 
@@ -113,22 +128,38 @@ class DailySalesRecord {
     required this.isHolidayToggle,
     required this.status,
     required this.items,
+    required this.totalTarget,
+    required this.totalSold,
   });
 
   final bool isHolidayToggle;
   final String status;
   final Map<int, int> items; // menu_id -> sold_portions
+  final int totalTarget;
+  final int totalSold;
+
+  double get efficiency =>
+      totalTarget == 0 ? 0 : totalSold / totalTarget * 100;
+
+  int get remaining => (totalTarget - totalSold).clamp(0, 1 << 31);
 
   factory DailySalesRecord.fromJson(Map<String, dynamic> json) {
     final rawItems = (json['items'] as List<dynamic>? ?? []);
+    int target = 0;
+    int sold = 0;
+    final map = <int, int>{};
+    for (final e in rawItems) {
+      final m = e as Map<String, dynamic>;
+      map[(m['menu_id'] as int)] = ((m)['sold_portions'] as int? ?? 0);
+      target += ((m)['target_portions'] as int? ?? 0);
+      sold += ((m)['sold_portions'] as int? ?? 0);
+    }
     return DailySalesRecord(
       isHolidayToggle: json['is_holiday_toggle'] as bool? ?? false,
       status: (json['status'] ?? '') as String,
-      items: {
-        for (final e in rawItems)
-          ((e as Map<String, dynamic>)['menu_id'] as int):
-              ((e)['sold_portions'] as int? ?? 0),
-      },
+      items: map,
+      totalTarget: target,
+      totalSold: sold,
     );
   }
 }
@@ -170,6 +201,24 @@ class SalesService {
 
   static Future<void> deleteMenu(int id) async {
     await ApiService.delete('/api/v1/sales/menus/$id');
+  }
+
+  static Future<MenuItem> uploadMenuPhoto(
+    int id, {
+    required List<int> bytes,
+    required String filename,
+  }) async {
+    final data = await ApiService.postMultipart(
+      '/api/v1/sales/menus/$id/photo',
+      fileBytes: Uint8List.fromList(bytes),
+      filename: filename,
+    );
+    return MenuItem.fromJson(data);
+  }
+
+  static Future<MenuItem> deleteMenuPhoto(int id) async {
+    final data = await ApiService.delete('/api/v1/sales/menus/$id/photo');
+    return MenuItem.fromJson(data);
   }
 
   static Future<SalesSummary> saveDailyRecord({

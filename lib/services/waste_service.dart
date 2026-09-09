@@ -16,6 +16,7 @@ class WasteChartPoint {
 
 class WasteSummary {
   const WasteSummary({
+    required this.hasData,
     required this.financialCumulativeIdr,
     required this.monthSavedPortions,
     required this.co2ReducedKg,
@@ -25,6 +26,8 @@ class WasteSummary {
     required this.levelLabel,
     required this.auditCount,
   });
+
+  final bool hasData;
 
   final int financialCumulativeIdr;
   final int monthSavedPortions;
@@ -36,7 +39,7 @@ class WasteSummary {
   final int auditCount;
 
   factory WasteSummary.fromJson(Map<String, dynamic> j) => WasteSummary(
-        financialCumulativeIdr: (j['financial_cumulative_idr'] as num? ?? 0).toInt(),
+        hasData: j['has_data'] as bool? ?? false,        financialCumulativeIdr: (j['financial_cumulative_idr'] as num? ?? 0).toInt(),
         monthSavedPortions: (j['month_saved_portions'] as num? ?? 0).toInt(),
         co2ReducedKg: (j['co2_reduced_kg'] as num? ?? 0).toDouble(),
         wasteReductionPercent: (j['waste_reduction_percent'] as num? ?? 0).toInt(),

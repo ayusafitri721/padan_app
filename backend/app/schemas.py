@@ -56,6 +56,7 @@ class MenuOut(BaseModel):
     sold_today: int
     remaining: int
     price: int
+    image_url: str | None = None
 
 
 class MenuIn(BaseModel):
@@ -130,8 +131,10 @@ class PredictionPlanOut(BaseModel):
 class PricingConfigIn(BaseModel):
     is_enabled: bool = True
     max_discount_percentage: int = 35
-    start_intervention_time: str  # "HH:MM" atau "HH:MM:SS"
-    broadcast_whatsapp: bool = True
+    # Cara baru (disarankan): jam tutup warung → mulai intervensi = tutup - 90 mnt.
+    closing_time: str | None = None  # "HH:MM" atau "HH:MM:SS"
+    # Cara lama: jam mulai intervensi langsung (tetap didukung).
+    start_intervention_time: str | None = None
 
 
 class PricingScheduleOut(BaseModel):
@@ -144,6 +147,7 @@ class PricingConfigOut(BaseModel):
     is_enabled: bool
     max_discount_percentage: int
     start_intervention_time: str
+    closing_time: str  # start + 90 menit
     broadcast_whatsapp: bool
     schedules: list[PricingScheduleOut]
 

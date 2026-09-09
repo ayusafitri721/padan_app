@@ -2,6 +2,9 @@
 .env
 .env.*
 !.env.example
+# Foto menu yang diupload user (lokal) — jangan commit isinya
+backend/uploads/*
+!backend/uploads/.gitkeep
 # Miscellaneous
 *.class
 *.log

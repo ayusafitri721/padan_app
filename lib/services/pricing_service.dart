@@ -16,19 +16,22 @@ class PricingConfig {
   const PricingConfig({
     required this.isEnabled,
     required this.maxDiscount,
-    required this.startTime,
+    required this.startTime, // "HH:MM"
+    required this.closingTime, // "HH:MM" — tutup warung
     required this.broadcastWa,
     required this.schedules,
   });
   final bool isEnabled;
   final int maxDiscount;
   final String startTime; // "HH:MM"
+  final String closingTime; // "HH:MM"
   final bool broadcastWa;
   final List<PricingSchedule> schedules;
   factory PricingConfig.fromJson(Map<String, dynamic> j) => PricingConfig(
         isEnabled: j['is_enabled'] as bool? ?? true,
         maxDiscount: (j['max_discount_percentage'] as num? ?? 35).toInt(),
         startTime: j['start_intervention_time'] as String? ?? '20:30',
+        closingTime: j['closing_time'] as String? ?? '22:00',
         broadcastWa: j['broadcast_whatsapp'] as bool? ?? true,
         schedules: [
           for (final e in (j['schedules'] as List<dynamic>? ?? []))
@@ -75,13 +78,14 @@ class PricingService {
   static Future<PricingConfig> saveConfig({
     required bool isEnabled,
     required int maxDiscount,
-    required String startTime, // "HH:MM"
+    required String closingTime, // "HH:MM" jam tutup — backend hitung mundurnya
     required bool broadcastWa,
   }) async {
+    final t = closingTime.length == 5 ? '$closingTime:00' : closingTime;
     final data = await ApiService.put('/api/v1/pricing/config', {
       'is_enabled': isEnabled,
       'max_discount_percentage': maxDiscount,
-      'start_intervention_time': startTime.length == 5 ? '$startTime:00' : startTime,
+      'closing_time': t,
       'broadcast_whatsapp': broadcastWa,
     });
     return PricingConfig.fromJson(data);

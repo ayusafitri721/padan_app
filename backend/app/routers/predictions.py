@@ -1,11 +1,12 @@
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user_id
 from ..database import get_db
+from ..geocode import resolve_adm4
 from ..models import DailySales, DailySalesItem, Menu, PredictionPlan
 from .. import schemas
 from .weather import build_weather_payload
@@ -88,6 +89,7 @@ class PredictionDetailOut(BaseModel):
     safe_sweet: int
     safe_high: int
     co2e_saved_kg: float
+    weather_location: str = ""  # lokasi BMKG yang dipakai faktor cuaca
     factors: list[PredictionFactorOut]
     ingredients: list[IngredientOut]
 
@@ -123,12 +125,33 @@ def _avg_sold_last_week(db: Session, user_id: int, menu_id: int) -> float:
     return sum(r[0] for r in rows) / len(rows)
 
 
-def _weather_factor() -> tuple[int, str]:
-    """Faktor cuaca BMKG real-time (dengan fallback default bila gagal)."""
+def _resolve_weather_adm4(
+    adm4: str | None, lat: float | None, lon: float | None
+) -> str:
+    """Tentukan kode adm4 BMKG dari query.
+
+    Prioritas: adm4 eksplisit > lat/lon device > default Kemayoran.
+    Selalu fallback ke default agar klien lama tidak rusak.
+    """
+    if adm4:
+        return adm4
+    if lat is not None and lon is not None:
+        resolved = resolve_adm4(lat, lon)
+        if resolved:
+            return resolved
+    return DEFAULT_ADM4
+
+
+def _weather_factor(adm4: str = DEFAULT_ADM4) -> tuple[int, str, str]:
+    """Faktor cuaca BMKG real-time (dengan fallback default bila gagal).
+
+    Mengembalikan (delta, deskripsi, lokasi).
+    """
     try:
-        data = build_weather_payload(DEFAULT_ADM4)
+        data = build_weather_payload(adm4)
         condition = data.get("condition", "").lower()
         temp = data.get("temperature", 0)
+        lokasi = data.get("lokasi", "")
         if "hujan" in condition:
             delta, desc = -3, "Hujan turun, kurangi porsi ekstra"
         elif "cerah" in condition and temp >= 30:
@@ -137,9 +160,11 @@ def _weather_factor() -> tuple[int, str]:
             delta, desc = 1, "Berawan, kunjungan cenderung stabil"
         else:
             delta, desc = 2, f"Kondisi {condition.title()} {temp}°C, cukup bersahabat"
-        return delta, desc
+        if lokasi:
+            desc = f"{desc} — berdasarkan cuaca {lokasi}"
+        return delta, desc, lokasi
     except Exception:  # noqa: BLE001
-        return 1, "Prakiraan cuaca tidak memengaruhi signifikan"
+        return 1, "Prakiraan cuaca tidak memengaruhi signifikan", ""
 
 
 def _weekday_factor(target_date: date) -> tuple[int, str]:
@@ -176,9 +201,63 @@ def _leftover_factor(db: Session, user_id: int, menu_id: int) -> int:
     return items.remaining_portions
 
 
+class PredictionTodayItemOut(BaseModel):
+    menu_id: int
+    menu_name: str
+    category: str
+    accuracy_score: float
+    recommended_portions: int
+    safe_low: int
+    safe_high: int
+    reason: str  # deskripsi faktor dominan (untuk kartu dashboard)
+
+
+def _recommendation(
+    db: Session, user_id: int, menu: Menu, target_date: date, w_delta: int
+) -> tuple[int, int, int, dict[str, int]]:
+    """Inti formula prediksi, dipakai /detail dan /today agar konsisten.
+
+    Mengembalikan (sweet, low, high, deltas_per_faktor).
+    """
+    today = date.today()
+    wk_delta, _ = _weekday_factor(target_date)
+    ev_delta, _ = _event_factor(target_date)
+    leftovers = _leftover_factor(db, user_id, menu.id)
+    lf_delta = -min(leftovers, 4)  # sedot koreksi hingga -4 porsi
+
+    # Akurasi model dari riwayat menu (0-100) → bobot koreksi.
+    accuracy = float(menu.accuracy or 70)
+    base = float(menu.target_portions)
+
+    # Rata-rata terjual 7 hari terakhir jadi acuan kalau memungkinkan.
+    avg_last = _avg_sold_last_week(db, user_id, menu.id)
+    if avg_last > 0 and today.weekday() == target_date.weekday() - 1:
+        base = avg_last
+
+    delta_total = w_delta + wk_delta + ev_delta + lf_delta
+    sweet = int(round(base * (accuracy / 100.0) + delta_total))
+    sweet = max(1, sweet)
+
+    low = max(1, sweet - max(2, int(sweet * 0.05)))
+    high = sweet + max(3, int(sweet * 0.08))
+    return sweet, low, high, {
+        "weekday": wk_delta,
+        "event": ev_delta,
+        "leftover": lf_delta,
+        "leftover_count": leftovers,
+    }
 @router.get("/detail/{menu_id}", response_model=PredictionDetailOut)
 def prediction_detail(
     menu_id: int,
+    adm4: str | None = Query(
+        None, description="Kode wilayah adm4 BMKG (dipakai jika diberikan)"
+    ),
+    lat: float | None = Query(
+        None, description="Garis lintang device (dipakai jika adm4 tidak diberikan)"
+    ),
+    lon: float | None = Query(
+        None, description="Garis bujur device (dipakai jika adm4 tidak diberikan)"
+    ),
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
@@ -193,33 +272,23 @@ def prediction_detail(
     target_date = date.today() + timedelta(days=1)
     today = date.today()
 
-    w_delta, w_desc = _weather_factor()
+    weather_adm4 = _resolve_weather_adm4(adm4, lat, lon)
+    w_delta, w_desc, w_lokasi = _weather_factor(weather_adm4)
     wk_delta, wk_desc = _weekday_factor(target_date)
     ev_delta, ev_desc = _event_factor(target_date)
-    leftovers = _leftover_factor(db, user_id, menu_id)
-    lf_delta = -min(leftovers, 4)  # sedot koreksi hingga -4 porsi
+    sweet, low, high, deltas = _recommendation(db, user_id, menu, target_date, w_delta)
+    # Yang dikirim ke UI = riwayat asli (0 = belum ada riwayat); formula di
+    # atas tetap pakai baseline 70 secara internal bila 0.
+    raw_accuracy = float(menu.accuracy or 0)
+    leftovers = deltas["leftover_count"]
+    lf_delta = deltas["leftover"]
     lf_desc = (
         f"Mitigasi sisa kemarin {leftovers} porsi belum terserap"
         if leftovers > 0
         else "Tidak ada sisa kemarin yang perlu dikoreksi"
     )
 
-    # Akurasi model dari riwayat menu (0-100) → bobot koreksi.
-    accuracy = float(menu.accuracy or 70)
-    base = float(menu.target_portions)
-
-    # Rata-rata terjual 7 hari terakhir jadi acuan kalau memungkinkan.
-    avg_last = _avg_sold_last_week(db, user_id, menu_id)
-    if avg_last > 0 and today.weekday() == target_date.weekday() - 1:
-        base = avg_last
-
-    delta_total = w_delta + wk_delta + ev_delta + lf_delta
-    sweet = int(round(base * (accuracy / 100.0) + delta_total))
-    sweet = max(1, sweet)
-
     safe_sweet = sweet
-    low = max(1, safe_sweet - max(2, int(sweet * 0.05)))
-    high = safe_sweet + max(3, int(sweet * 0.08))
 
     # Estimasi emisi karbon tersimpan (kg CO2e) vs masak berlebih.
     co2e = round((high - low) * 0.8 * (1.2 if menu.category == "Makanan Utama" else 1.0), 1)
@@ -278,7 +347,7 @@ def prediction_detail(
         menu_name=menu.name,
         sku=_make_sku(menu.name, menu.id),
         category=menu.category,
-        accuracy_score=accuracy,
+        accuracy_score=raw_accuracy,
         prediction_date=target_date.strftime("%Y-%m-%d"),
         target_time="Malam",
         recommended_portions=safe_sweet,
@@ -286,9 +355,73 @@ def prediction_detail(
         safe_sweet=safe_sweet,
         safe_high=high,
         co2e_saved_kg=co2e,
+        weather_location=w_lokasi,
         factors=factors,
         ingredients=ingredients,
     )
+
+
+@router.get("/today", response_model=list[PredictionTodayItemOut])
+def predictions_today(
+    adm4: str | None = Query(
+        None, description="Kode wilayah adm4 BMKG (dipakai jika diberikan)"
+    ),
+    lat: float | None = Query(
+        None, description="Garis lintang device (dipakai jika adm4 tidak diberikan)"
+    ),
+    lon: float | None = Query(
+        None, description="Garis bujur device (dipakai jika adm4 tidak diberikan)"
+    ),
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Ringkas rekomendasi semua menu aktif untuk kartu dashboard.
+
+    Satu request (cuaca diambil sekali), bukan N request /detail.
+    """
+    menus = (
+        db.query(Menu)
+        .filter(Menu.user_id == user_id, Menu.is_active.is_(True))
+        .order_by(Menu.id)
+        .all()
+    )
+    if not menus:
+        return []
+
+    target_date = date.today() + timedelta(days=1)
+    weather_adm4 = _resolve_weather_adm4(adm4, lat, lon)
+    w_delta, w_desc, _ = _weather_factor(weather_adm4)
+    wk_delta, wk_desc = _weekday_factor(target_date)
+    ev_delta, ev_desc = _event_factor(target_date)
+
+    items: list[PredictionTodayItemOut] = []
+    for menu in menus:
+        sweet, low, high, deltas = _recommendation(db, user_id, menu, target_date, w_delta)
+        # Alasan = faktor dengan bobot absolut terbesar
+        candidates = [
+            (w_delta, w_desc),
+            (wk_delta, wk_desc),
+            (ev_delta, ev_desc),
+            (deltas["leftover"], (
+                f"Sisa kemarin {deltas['leftover_count']} porsi belum terserap"
+                if deltas["leftover_count"] > 0
+                else "Tidak ada sisa kemarin"
+            )),
+        ]
+        reason = max(candidates, key=lambda c: abs(c[0]))[1]
+        items.append(
+            PredictionTodayItemOut(
+                menu_id=menu.id,
+                menu_name=menu.name,
+                category=menu.category,
+                accuracy_score=float(menu.accuracy or 0),
+                recommended_portions=sweet,
+                safe_low=low,
+                safe_high=high,
+                reason=reason,
+            )
+        )
+    return items
 
 
 @router.post("/plan", response_model=schemas.PredictionPlanOut, status_code=201)
@@ -297,7 +430,12 @@ def lock_plan(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """Kunci & terapkan target masak untuk tanggal target (koreksi manual)."""
+    """Kunci & terapkan target masak untuk tanggal target (koreksi manual).
+
+    Menutup loop: target menu ikut diperbarui ke locked_portions sehingga
+    besok Stok/prediksi berangkat dari angka yang dikunci. Riwayat
+    DailySalesItem tidak ikut berubah (snapshot saat pencatatan).
+    """
     menu = (
         db.query(Menu)
         .filter(Menu.id == payload.menu_id, Menu.user_id == user_id, Menu.is_active.is_(True))
@@ -333,6 +471,8 @@ def lock_plan(
         )
         db.add(plan)
 
+    # Tutup loop: target menu mengikuti angka yang dikunci.
+    menu.target_portions = locked
     db.commit()
     db.refresh(plan)
     return plan

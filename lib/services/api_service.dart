@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -10,6 +11,19 @@ class ApiService {
 
   static const String baseUrl = 'http://10.197.133.126:8000';
 
+  /// Batas 15 detik untuk SEMUA request — tanpa ini request yang stall
+  /// bikin UI muter selamanya. Timeout diubah jadi ApiException agar
+  /// ditampilkan sebagai pesan error yang jelas.
+  static Future<http.Response> _send(Future<http.Response> request) async {
+    try {
+      return await request.timeout(const Duration(seconds: 15));
+    } on TimeoutException {
+      throw ApiException(
+        'Server tidak merespons dalam 15 detik. Pastikan backend berjalan.',
+      );
+    }
+  }
+
   static Map<String, String> get _headers {
     final headers = <String, String>{'Content-Type': 'application/json'};
     final token = AuthService.currentSession.value?.token;
@@ -20,10 +34,10 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> get(String path) async {
-    final response = await http.get(
+    final response = await _send(http.get(
       Uri.parse('$baseUrl$path'),
       headers: _headers,
-    );
+    ));
 
     final data = _decode(response.body);
     if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -35,10 +49,10 @@ class ApiService {
   }
 
   static Future<List<dynamic>> getList(String path) async {
-    final response = await http.get(
+    final response = await _send(http.get(
       Uri.parse('$baseUrl$path'),
       headers: _headers,
-    );
+    ));
 
     final body = response.body.isEmpty ? '[]' : response.body;
     final data = jsonDecode(body);
@@ -59,11 +73,11 @@ class ApiService {
     String path,
     Map<String, dynamic> body,
   ) async {
-    final response = await http.post(
+    final response = await _send(http.post(
       Uri.parse('$baseUrl$path'),
       headers: _headers,
       body: jsonEncode(body),
-    );
+    ));
 
     final data = _decode(response.body);
     if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -78,11 +92,11 @@ class ApiService {
     String path,
     Map<String, dynamic> body,
   ) async {
-    final response = await http.put(
+    final response = await _send(http.put(
       Uri.parse('$baseUrl$path'),
       headers: _headers,
       body: jsonEncode(body),
-    );
+    ));
 
     final data = _decode(response.body);
     if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -93,14 +107,14 @@ class ApiService {
     );
   }
 
-  static Future<void> delete(String path) async {
-    final response = await http.delete(
+  static Future<Map<String, dynamic>> delete(String path) async {
+    final response = await _send(http.delete(
       Uri.parse('$baseUrl$path'),
       headers: _headers,
-    );
+    ));
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      return;
+      return _decode(response.body);
     }
     final data = _decode(response.body);
     throw ApiException(
@@ -108,11 +122,46 @@ class ApiService {
     );
   }
 
-  static Future<Uint8List> getBytes(String path) async {
-    final response = await http.get(
+  /// Upload satu file via multipart (mis. foto menu). [fileBytes] + [filename]
+  /// dari image_picker sehingga jalan identik di web & mobile.
+  static Future<Map<String, dynamic>> postMultipart(
+    String path, {
+    required Uint8List fileBytes,
+    required String filename,
+    String field = 'photo',
+    Duration timeout = const Duration(seconds: 30),
+  }) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl$path'),
+    )..headers.addAll(_headers);
+    // MultipartRequest set content-type sendiri; jangan timpa dengan JSON.
+    request.headers.remove('Content-Type');
+    request.files.add(
+      http.MultipartFile.fromBytes(field, fileBytes, filename: filename),
+    );
+    http.StreamedResponse streamed;
+    try {
+      streamed = await request.send().timeout(timeout);
+    } on TimeoutException {
+      throw ApiException(
+        'Upload timeout. Periksa koneksi lalu coba lagi.',
+      );
+    }
+    final body = await streamed.stream.bytesToString();
+    final data = _decode(body);
+    if (streamed.statusCode >= 200 && streamed.statusCode < 300) {
+      return data;
+    }
+    throw ApiException(
+      data['detail'] ?? 'Upload gagal (HTTP ${streamed.statusCode})',
+    );
+  }
+
+  static Future<Uint8List> getBytes(String path) async {    final response = await _send(http.get(
       Uri.parse('$baseUrl$path'),
       headers: _headers,
-    );
+    ));
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return response.bodyBytes;
     }

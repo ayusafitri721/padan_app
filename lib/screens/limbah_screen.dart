@@ -9,8 +9,9 @@ import '../utils/file_saver.dart';
 import '../utils/web_download.dart';
 
 class LimbahScreen extends StatefulWidget {
-  const LimbahScreen({super.key, this.onGoToAkun});
+  const LimbahScreen({super.key, this.onGoToAkun, this.onGoToStok});
   final VoidCallback? onGoToAkun;
+  final VoidCallback? onGoToStok;
 
   @override
   State<LimbahScreen> createState() => _LimbahScreenState();
@@ -39,7 +40,7 @@ class _LimbahScreenState extends State<LimbahScreen> {
         _data = s;
         _loading = false;
       });
-    } on Exception catch (e) {
+    } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = e is ApiException ? e.message : 'Gagal memuat data limbah.';
@@ -134,7 +135,7 @@ class _LimbahScreenState extends State<LimbahScreen> {
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(color: AppColors.tonalBadge, borderRadius: BorderRadius.circular(12)),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Aktif s/d 31 Des 2025', style: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.primary)),
+                Text('Aktif s/d 31 Des 2026', style: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.primary)),
                 const SizedBox(height: 4),
                 Text('Fitur AI & Cuaca BMKG • Prediksi stok harian, audit limbah otomatis, dan laporan PDF.', style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppColors.textPrimary, height: 1.4)),
               ]),
@@ -247,7 +248,8 @@ class _LimbahScreenState extends State<LimbahScreen> {
                   ),
                 )
               : SafeArea(
-                  child: ListView(
+                  child: _data!.hasData
+                      ? ListView(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                     children: [
                       // Top badges
@@ -443,8 +445,8 @@ class _LimbahScreenState extends State<LimbahScreen> {
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                    Text(user?.warungName ?? 'Warung Sambel Mantap Bu Siti', style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-                                    Text(user != null ? (user.warungName) : 'Siti Rahmawati', style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppColors.mutedText)),
+                                    Text(user?.warungName ?? 'Warung Saya', style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                                    Text(user?.businessType ?? 'UMKM Kuliner', style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppColors.mutedText)),
                                   ]),
                                 ),
                                 Container(
@@ -466,7 +468,7 @@ class _LimbahScreenState extends State<LimbahScreen> {
                                   const SizedBox(width: 10),
                                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                     Text('PADAN Pro Plan', style: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-                                    Text('Aktif s/d 31 Des 2025 • Fitur AI & Cuaca BMKG', style: GoogleFonts.plusJakartaSans(fontSize: 11, color: AppColors.mutedText)),
+                                    Text('Aktif s/d 31 Des 2026 • Fitur AI & Cuaca BMKG', style: GoogleFonts.plusJakartaSans(fontSize: 11, color: AppColors.mutedText)),
                                   ])),
                                   const Icon(Icons.chevron_right, size: 20, color: AppColors.mutedText),
                                 ]),
@@ -526,8 +528,71 @@ class _LimbahScreenState extends State<LimbahScreen> {
                       ),
                       const SizedBox(height: 8),
                     ],
+                  )
+                      : _buildEmptyState(),
+                ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 88,
+              height: 88,
+              decoration: BoxDecoration(
+                color: AppColors.tonalBadge,
+                borderRadius: BorderRadius.circular(28),
+              ),
+              child: const Icon(
+                Icons.recycling_outlined,
+                size: 44,
+                color: AppColors.primary,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Belum ada data limbah',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _data?.insight ??
+                  'Catat penjualan harian di tab Stok agar ringkasan limbah terisi otomatis.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 13,
+                height: 1.5,
+                color: AppColors.mutedText,
+              ),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              height: 48,
+              child: ElevatedButton.icon(
+                onPressed: widget.onGoToStok,
+                icon: const Icon(Icons.edit_note_outlined, size: 18),
+                label: const Text('Catat Penjualan Sekarang'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(9999),
                   ),
                 ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

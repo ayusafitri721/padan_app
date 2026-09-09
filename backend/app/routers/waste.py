@@ -27,20 +27,40 @@ def get_waste_summary(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """Ringkasan limbah: kalkulasi dari daily_sales vs target.
-    Mengembalikan data sesuai spec md/limbah.md (kumulatif + 4 bulan chart).
+    """Ringkasan limbah murni dari data nyata daily_sales.
+
+    Tanpa angka dummy: akun tanpa data mendapat has_data=False agar
+    Flutter menampilkan empty state, bukan angka karangan.
     """
     today = date.today()
 
-    # Ambil semua daily_sales user untuk kalkulasi — murni dari DB, tidak ada dummy
     all_sales = db.query(DailySales).filter(DailySales.user_id == user_id).all()
 
-    # Hitung real dari DB: waste = remaining, saved = sold
-    # Group by month
+    if not all_sales:
+        return {
+            "has_data": False,
+            "financial_cumulative_idr": 0,
+            "month_saved_portions": 0,
+            "co2_reduced_kg": 0.0,
+            "waste_reduction_percent": 0,
+            "chart": [],
+            "insight": "Belum ada data penjualan. Catat penjualan harian di tab Stok agar ringkasan limbah terisi otomatis.",
+            "level_label": "Pejuang Pangan",
+            "audit_count": 0,
+        }
+
+    # Harga asli per menu (fallback ke rata-rata bila menu belum punya harga) — bara
+    prices = {
+        m.id: (m.price if m.price and m.price > 0 else AVG_PRICE_PER_PORTION)
+        for m in db.query(Menu).filter(Menu.user_id == user_id).all()
+    }
+
+    # Hitung real dari DB: waste = remaining, saved = sold. Group by month
     from collections import defaultdict
 
     monthly_waste_kg: dict[str, float] = defaultdict(float)
     monthly_saved: dict[str, int] = defaultdict(int)
+    financial = 0
 
     for ds in all_sales:
         key = _month_key(ds.date)
@@ -49,8 +69,10 @@ def get_waste_summary(
             waste = max(0, it.remaining_portions)
             monthly_waste_kg[key] += waste * KG_PER_PORTION
             monthly_saved[key] += it.sold_portions
+            financial += it.sold_portions * prices.get(it.menu_id, AVG_PRICE_PER_PORTION)
 
-    # Ambil 4 bulan terakhir termasuk bulan ini — murni DB (0 jika belum ada data)
+    # Ambil 4 bulan terakhir termasuk bulan ini (hanya bulan yang ada datanya
+    # yang tampil; tidak ada suntikan angka dummy) — bara
     chart = []
     id_labels = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agt", "Sep", "Okt", "Nov", "Des"]
     for i in range(3, -1, -1):
@@ -60,30 +82,32 @@ def get_waste_summary(
             m += 12
             y -= 1
         key = f"{y:04d}-{m:02d}"
-        label = id_labels[m - 1]
-        waste_kg = round(monthly_waste_kg.get(key, 0.0), 1)
-        chart.append({"label": label, "month_year": key, "waste_kg": waste_kg})
+        if key not in monthly_waste_kg:
+            continue
+        chart.append({
+            "label": id_labels[m - 1],
+            "month_year": key,
+            "waste_kg": round(monthly_waste_kg[key], 1),
+        })
 
-    # Hitung financial kumulatif & emisi dari total saved — murni DB tanpa clamp dummy
     total_saved = sum(monthly_saved.values())
     total_waste_kg = sum(monthly_waste_kg.values())
-    financial = total_saved * AVG_PRICE_PER_PORTION
     co2 = round(total_waste_kg * CO2_PER_KG, 1)
 
-    # Persen penurunan limbah (bulan pertama vs terakhir) — 0 jika belum ada data
-    first = chart[0]["waste_kg"] if chart else 0
-    last = chart[-1]["waste_kg"] if chart else 0
-    reduction = int(round((last - first) / first * 100)) if first else 0
+    # Persen penurunan limbah (bulan pertama vs terakhir yang ada datanya) — bara
+    if len(chart) >= 2 and chart[0]["waste_kg"] > 0:
+        first = chart[0]["waste_kg"]
+        last = chart[-1]["waste_kg"]
+        reduction = int(round((last - first) / first * 100))
+    else:
+        reduction = 0
 
-    # Bulan ini saved — murni DB
     this_key = _month_key(today)
     month_saved = monthly_saved.get(this_key, 0)
 
-    # Audit count & level dinamis — murni DB
     audit_count = db.query(DailySales).filter(DailySales.user_id == user_id, DailySales.status == "final").count()
-    if audit_count == 0 and all_sales:
+    if audit_count == 0:
         audit_count = len(all_sales)
-    # level berdasarkan reduction real; jika belum ada data → Pejuang Pangan
     if reduction <= -75:
         level = "Bebas Mubazir Level 3"
     elif reduction <= -40:
@@ -91,12 +115,10 @@ def get_waste_summary(
     elif reduction <= -15:
         level = "Bebas Mubazir Level 1"
     else:
-        level = "Pejuang Pangan" if all_sales else "Pejuang Pangan"
+        level = "Pejuang Pangan"
 
-    # Insight dinamis berhubungan dengan data
-    if not all_sales:
-        insight = "Belum ada data penjualan — mulai catat penjualan harian agar audit limbah terbentuk."
-    elif reduction <= -30:
+    # Insight dinamis gabungan bara+main: main punya varian lebih kaya untuk limbah tinggi/stabil
+    if reduction <= -30:
         insight = "Porsi over-produksi berkurang drastis berkat kalkulator porsi otomatis BMKG & Hari Libur."
     elif total_waste_kg > 5:
         insight = "Limbah masih terdeteksi — aktifkan Dynamic Pricing di tab Harga untuk kurangi sisa >3 porsi."
@@ -104,6 +126,7 @@ def get_waste_summary(
         insight = "Performa stabil — pertahankan pencatatan harian untuk jaga tren penurunan limbah."
 
     return {
+        "has_data": True,
         "financial_cumulative_idr": financial,
         "month_saved_portions": month_saved,
         "co2_reduced_kg": co2,

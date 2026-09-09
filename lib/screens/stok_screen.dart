@@ -1,11 +1,15 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../constants/app_colors.dart';
 import '../services/prediction_service.dart';
 import '../services/sales_service.dart';
 import 'detail_prediksi_list_screen.dart';
+import 'detail_prediksi_screen.dart';
 
 class StokScreen extends StatefulWidget {
   const StokScreen({super.key, this.onGoToAkun});
@@ -93,7 +97,7 @@ class _StokScreenState extends State<StokScreen> {
         _isHoliday = record?.isHolidayToggle ?? false;
         _loading = false;
       });
-    } on Exception catch (e) {
+    } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = e.toString();
@@ -118,6 +122,23 @@ class _StokScreenState extends State<StokScreen> {
     final sisa = menu.targetPortions - (_sold[menu.id] ?? 0);
     if (sisa <= 0) return 'Habis';
     return '$sisa porsi';
+  }
+
+  String _topMenuText() {
+    if (_menus.isEmpty) return 'Belum ada menu. Tambahkan menu untuk mulai mencatat.';
+    MenuItem? top;
+    var topSold = -1;
+    for (final m in _menus) {
+      final sold = _sold[m.id] ?? 0;
+      if (sold > topSold) {
+        topSold = sold;
+        top = m;
+      }
+    }
+    if (top == null || topSold <= 0) {
+      return 'Belum ada penjualan tercatat. Isi porsi terjual tiap menu.';
+    }
+    return 'Menu Terlaris: ${top.name} ($topSold porsi)';
   }
 
   Future<void> _submit({required bool asDraft}) async {
@@ -168,7 +189,7 @@ class _StokScreenState extends State<StokScreen> {
         ),
       );
 
-      // Kumpulkan semua menu yang diinput (>0) agar detail menampilkan semuanya, bukan cuma top 1
+      // Kumpulkan semua menu yang diinput (>0) agar detail menampilkan semuanya, bukan cuma top 1 (merge main)
       final savedIds = items.map((e) => e['menu_id'] as int).toList();
 
       await _load();
@@ -179,7 +200,7 @@ class _StokScreenState extends State<StokScreen> {
         ),
       );
       await _load();
-    } on Exception catch (e) {
+    } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.toString())),
@@ -198,13 +219,21 @@ class _StokScreenState extends State<StokScreen> {
     if (result == null || !mounted) return;
 
     try {
-      await SalesService.createMenu(
+      final created = await SalesService.createMenu(
         MenuInput(
           name: result.name,
           category: result.category,
           targetPortions: result.targetPortions,
+          price: result.price,
         ),
       );
+      if (result.photoBytes != null && result.photoName != null) {
+        await SalesService.uploadMenuPhoto(
+          created.id,
+          bytes: result.photoBytes!,
+          filename: result.photoName!,
+        );
+      }
       if (!mounted) return;
       setState(() => _loading = true);
       await _load();
@@ -212,7 +241,7 @@ class _StokScreenState extends State<StokScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Menu berhasil ditambahkan.')),
       );
-    } on Exception catch (e) {
+    } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.toString())),
@@ -228,6 +257,8 @@ class _StokScreenState extends State<StokScreen> {
         name: menu.name,
         category: menu.category,
         targetPortions: menu.targetPortions,
+        price: menu.price,
+        existingPhotoUrl: menu.photoUrl,
       ),
     );
     if (result == null || !mounted) return;
@@ -239,8 +270,18 @@ class _StokScreenState extends State<StokScreen> {
           name: result.name,
           category: result.category,
           targetPortions: result.targetPortions,
+          price: result.price,
         ),
       );
+      if (result.photoBytes != null && result.photoName != null) {
+        await SalesService.uploadMenuPhoto(
+          menu.id,
+          bytes: result.photoBytes!,
+          filename: result.photoName!,
+        );
+      } else if (result.photoCleared && menu.photoUrl != null) {
+        await SalesService.deleteMenuPhoto(menu.id);
+      }
       if (!mounted) return;
       setState(() => _loading = true);
       await _load();
@@ -248,7 +289,7 @@ class _StokScreenState extends State<StokScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Menu berhasil diperbarui.')),
       );
-    } on Exception catch (e) {
+    } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.toString())),
@@ -288,7 +329,7 @@ class _StokScreenState extends State<StokScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Menu berhasil dihapus.')),
       );
-    } on Exception catch (e) {
+    } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.toString())),
@@ -310,21 +351,6 @@ class _StokScreenState extends State<StokScreen> {
     // DateTime.weekday: Mon=1 .. Sun=7; map to Sen..Min
     final dayLabel = idDays[_selectedDate.weekday - 1];
     return '$dayLabel, ${_formattedDate()}';
-  }
-
-  String _topMenuLabelText() {
-    if (_menus.isEmpty) return '-';
-    MenuItem? top;
-    int maxSold = -1;
-    for (final m in _menus) {
-      final s = _sold[m.id] ?? 0;
-      if (s > maxSold) {
-        maxSold = s;
-        top = m;
-      }
-    }
-    if (top == null || maxSold <= 0) return _menus.first.name;
-    return '${top.name} ($maxSold porsi)';
   }
 
   void _showNotifications() {
@@ -570,7 +596,7 @@ class _StokScreenState extends State<StokScreen> {
                         totalTarget: _targetTotal(),
                         efficiency: _efficiency(),
                         isHoliday: _isHoliday,
-                        topMenuLabel: _topMenuLabelText(),
+                        topMenuLabel: _topMenuText(),
                       ),
                       const SizedBox(height: 20),
                       _SaveButtons(
@@ -844,6 +870,43 @@ class _HolidayToggle extends StatelessWidget {
   }
 }
 
+/// Thumbnail foto menu 52px — fallback ke ikon kategori bila belum ada foto
+/// atau gagal dimuat.
+/// Format rupiah ringkas: 15000 → Rp15.000
+String _formatRp(int v) {
+  final s = v.toString();
+  final buf = StringBuffer();
+  for (int i = 0; i < s.length; i++) {
+    final pos = s.length - i;
+    buf.write(s[i]);
+    if (pos > 1 && pos % 3 == 1) buf.write('.');
+  }
+  return 'Rp${buf.toString()}';
+}
+
+class _MenuPhoto extends StatelessWidget {  const _MenuPhoto({required this.menu, this.size = 52, this.iconSize = 26});
+
+  final MenuItem menu;
+  final double size;
+  final double iconSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final url = menu.photoUrl;
+    if (url == null) {
+      return Icon(menu.icon, size: iconSize, color: AppColors.primary);
+    }
+    return Image.network(
+      url,
+      width: size,
+      height: size,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) =>
+          Icon(menu.icon, size: iconSize, color: AppColors.primary),
+    );
+  }
+}
+
 class _MenuCard extends StatelessWidget {
   const _MenuCard({
     required this.menu,
@@ -893,11 +956,8 @@ class _MenuCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(14),
                 ),
                 alignment: Alignment.center,
-                child: Icon(
-                  menu.icon,
-                  size: 26,
-                  color: AppColors.primary,
-                ),
+                clipBehavior: Clip.antiAlias,
+                child: _MenuPhoto(menu: menu),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -918,6 +978,16 @@ class _MenuCard extends StatelessWidget {
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 12,
                         color: AppColors.mutedText,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${_formatRp(menu.price)}/porsi',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.secondary,
                         fontFeatures: const [FontFeature.tabularFigures()],
                       ),
                     ),
@@ -1159,7 +1229,7 @@ class _AiSummaryCard extends StatelessWidget {
     final percent = efficiency.clamp(0, 100).toDouble();
     final bestMenuLabel = isHoliday
         ? 'Warung ditandai libur hari ini.'
-        : 'Menu Terlaris: $topMenuLabel';
+        : topMenuLabel;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1337,11 +1407,23 @@ class _MenuDraft {
     required this.name,
     required this.category,
     required this.targetPortions,
+    required this.price,
+    this.photoBytes,
+    this.photoName,
+    this.photoCleared = false,
   });
 
   final String name;
   final String category;
   final int targetPortions;
+  final int price;
+
+  /// Foto baru dari galeri (diupload setelah menu tersimpan).
+  final Uint8List? photoBytes;
+  final String? photoName;
+
+  /// True bila foto lama dihapus tanpa pengganti.
+  final bool photoCleared;
 }
 
 class _MenuFormDialog extends StatefulWidget {
@@ -1350,12 +1432,18 @@ class _MenuFormDialog extends StatefulWidget {
     this.name = '',
     this.category = 'Makanan Utama',
     this.targetPortions = 0,
+    this.price = 25000,
+    this.existingPhotoUrl,
   });
 
   final String title;
   final String name;
   final String category;
   final int targetPortions;
+  final int price;
+
+  /// URL foto yang sudah tersimpan (mode edit), null bila belum ada.
+  final String? existingPhotoUrl;
 
   @override
   State<_MenuFormDialog> createState() => _MenuFormDialogState();
@@ -1364,7 +1452,50 @@ class _MenuFormDialog extends StatefulWidget {
 class _MenuFormDialogState extends State<_MenuFormDialog> {
   late final TextEditingController _nameController;
   late final TextEditingController _targetController;
+  late final TextEditingController _priceController;
   late String _category;
+  Uint8List? _photoBytes;
+  String? _photoName;
+  bool _photoCleared = false;
+  bool _pickingPhoto = false;
+
+  String? get _previewUrl =>
+      _photoCleared ? null : widget.existingPhotoUrl;
+
+  Future<void> _pickPhoto() async {
+    if (_pickingPhoto) return;
+    setState(() => _pickingPhoto = true);
+    try {
+      final picked = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1024,
+        imageQuality: 80,
+      );
+      if (picked == null) return;
+      final bytes = await picked.readAsBytes();
+      if (!mounted) return;
+      setState(() {
+        _photoBytes = bytes;
+        _photoName = picked.name;
+        _photoCleared = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal memilih foto: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _pickingPhoto = false);
+    }
+  }
+
+  void _clearPhoto() {
+    setState(() {
+      _photoBytes = null;
+      _photoName = null;
+      _photoCleared = true;
+    });
+  }
 
   @override
   void initState() {
@@ -1375,18 +1506,22 @@ class _MenuFormDialogState extends State<_MenuFormDialog> {
         : 'Makanan Utama';
     _targetController =
         TextEditingController(text: widget.targetPortions.toString());
+    _priceController =
+        TextEditingController(text: widget.price.toString());
   }
 
   @override
   void dispose() {
     _nameController.dispose();
     _targetController.dispose();
+    _priceController.dispose();
     super.dispose();
   }
 
   void _submit() {
     final name = _nameController.text.trim();
     final target = int.tryParse(_targetController.text.trim()) ?? 0;
+    final price = int.tryParse(_priceController.text.trim()) ?? 25000;
     if (name.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Nama menu wajib diisi.')),
@@ -1398,24 +1533,97 @@ class _MenuFormDialogState extends State<_MenuFormDialog> {
         name: name,
         category: _category,
         targetPortions: target,
+        price: price < 1000 ? 1000 : price,
+        photoBytes: _photoBytes,
+        photoName: _photoName,
+        photoCleared: _photoCleared && _photoBytes == null,
       ),
+    );
+  }
+
+  InputDecoration _fieldDecoration({
+    required String label,
+    String? hint,
+    IconData? prefix,
+    String? suffix,
+    String? helper,
+  }) {
+    OutlineInputBorder border(Color color, [double width = 1]) =>
+        OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: color, width: width),
+        );
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      helperText: helper,
+      suffixText: suffix,
+      prefixIcon: prefix == null
+          ? null
+          : Icon(prefix, size: 20, color: AppColors.primary),
+      filled: true,
+      fillColor: AppColors.tonalBadge.withValues(alpha: 0.45),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      labelStyle: GoogleFonts.plusJakartaSans(
+        fontSize: 13,
+        color: AppColors.mutedText,
+      ),
+      floatingLabelStyle: GoogleFonts.plusJakartaSans(
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+        color: AppColors.primary,
+      ),
+      hintStyle: GoogleFonts.plusJakartaSans(
+        fontSize: 14,
+        color: AppColors.mutedText.withValues(alpha: 0.7),
+      ),
+      helperStyle: GoogleFonts.plusJakartaSans(
+        fontSize: 11,
+        color: AppColors.mutedText,
+      ),
+      suffixStyle: GoogleFonts.plusJakartaSans(
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+        color: AppColors.primary,
+      ),
+      enabledBorder: border(AppColors.outline),
+      focusedBorder: border(AppColors.primary, 1.5),
+      errorBorder: border(AppColors.error, 1.5),
+      focusedErrorBorder: border(AppColors.error, 1.5),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.title),
+      backgroundColor: AppColors.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(24),
+      ),
+      title: Text(
+        widget.title,
+        style: GoogleFonts.plusJakartaSans(
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+          color: AppColors.textPrimary,
+        ),
+      ),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: _nameController,
-              decoration: const InputDecoration(
-                labelText: 'Nama Menu',
-                hintText: 'contoh: Nasi Goreng Spesial',
-                border: OutlineInputBorder(),
+              textCapitalization: TextCapitalization.words,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+              decoration: _fieldDecoration(
+                label: 'Nama Menu',
+                hint: 'contoh: Nasi Goreng Spesial',
+                prefix: Icons.restaurant_outlined,
               ),
             ),
             const SizedBox(height: 12),
@@ -1423,10 +1631,118 @@ class _MenuFormDialogState extends State<_MenuFormDialog> {
               controller: _targetController,
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: const InputDecoration(
-                labelText: 'Target Porsi',
-                border: OutlineInputBorder(),
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+                fontFeatures: const [FontFeature.tabularFigures()],
               ),
+              decoration: _fieldDecoration(
+                label: 'Target Porsi',
+                prefix: Icons.inventory_2_outlined,
+                suffix: 'porsi',
+                helper: 'Acuan porsi masak harian menu ini.',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _priceController,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+              decoration: _fieldDecoration(
+                label: 'Harga per Porsi (Rp)',
+                prefix: Icons.payments_outlined,
+                helper: 'Dipakai pratinjau dynamic pricing.',
+              ),
+            ),
+            const SizedBox(height: 16),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Foto Menu (opsional)',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    color: AppColors.tonalBadge,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  alignment: Alignment.center,
+                  child: _photoBytes != null
+                      ? Image.memory(
+                          _photoBytes!,
+                          width: 72,
+                          height: 72,
+                          fit: BoxFit.cover,
+                        )
+                      : _previewUrl != null
+                          ? Image.network(
+                              _previewUrl!,
+                              width: 72,
+                              height: 72,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => const Icon(
+                                Icons.fastfood,
+                                size: 30,
+                                color: AppColors.primary,
+                              ),
+                            )
+                          : const Icon(
+                              Icons.add_a_photo_outlined,
+                              size: 30,
+                              color: AppColors.primary,
+                            ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: _pickingPhoto ? null : _pickPhoto,
+                        icon: _pickingPhoto
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.photo_library_outlined, size: 18),
+                        label: Text(
+                          _photoBytes != null || _previewUrl != null
+                              ? 'Ganti Foto'
+                              : 'Pilih dari Galeri',
+                        ),
+                      ),
+                      if (_photoBytes != null || _previewUrl != null)
+                        TextButton.icon(
+                          onPressed: _clearPhoto,
+                          icon: const Icon(Icons.delete_outline, size: 18),
+                          label: const Text('Hapus Foto'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppColors.error,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             Align(
@@ -1492,11 +1808,26 @@ class _MenuFormDialogState extends State<_MenuFormDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Batal'),
+          style: TextButton.styleFrom(foregroundColor: AppColors.mutedText),
+          child: Text(
+            'Batal',
+            style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+          ),
         ),
         FilledButton(
           onPressed: _submit,
-          child: const Text('Simpan'),
+          style: FilledButton.styleFrom(
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(9999),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          ),
+          child: Text(
+            'Simpan',
+            style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700),
+          ),
         ),
       ],
     );

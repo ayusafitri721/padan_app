@@ -25,14 +25,23 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return r * 2 * math.asin(math.sqrt(a))
 
 
-def resolve_adm4(lat: float, lon: float) -> str | None:
-    """Cari kode adm4 (desa/kelurahan) terdekat dari koordinat."""
+@lru_cache(maxsize=2048)
+def _resolve_cached(lat_r: float, lon_r: float) -> str | None:
+    """Scan 83rb titik sekali per koordinat (dibulatkan ±100 m).
+
+    GPS device jitter tiap request, jadi tanpa pembulatan cache tidak pernah hit.
+    """
     points = _load_points()
     best_code = None
     best_distance = math.inf
     for point in points:
-        distance = _haversine_km(lat, lon, point["lat"], point["lon"])
+        distance = _haversine_km(lat_r, lon_r, point["lat"], point["lon"])
         if distance < best_distance:
             best_distance = distance
             best_code = point["code"]
     return best_code
+
+
+def resolve_adm4(lat: float, lon: float) -> str | None:
+    """Cari kode adm4 (desa/kelurahan) terdekat dari koordinat."""
+    return _resolve_cached(round(lat, 3), round(lon, 3))
