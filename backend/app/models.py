@@ -40,6 +40,7 @@ class Menu(Base):
     sold_today = Column(Integer, nullable=False, default=0)
     remaining = Column(Integer, nullable=False, default=0)
     price = Column(Integer, nullable=False, default=25000)  # harga jual per porsi (untuk preview diskon)
+    image_url = Column(String(500), nullable=True)  # path foto menu, mis. /uploads/uuid.jpg
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False, default=datetime.now)
 

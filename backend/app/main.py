@@ -1,9 +1,18 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from .routers import auth, predictions, pricing, sales, waste, weather
 
 app = FastAPI(title="PADAN API", version="0.1.0")
+
+# Foto menu yang diupload (lihat sales.UPLOAD_DIR). check_dir=False agar
+# server tetap jalan walau folder belum ada (dibuat saat upload pertama).
+app.mount(
+    "/uploads",
+    StaticFiles(directory=str(sales.UPLOAD_DIR), check_dir=False),
+    name="uploads",
+)
 
 # Izinkan semua origin untuk development lokal (Flutter web/desktop/mobile)
 app.add_middleware(
