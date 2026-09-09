@@ -27,42 +27,40 @@ def get_waste_summary(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """Ringkasan limbah: kalkulasi dari daily_sales vs target.
-    Mengembalikan data sesuai spec md/limbah.md (kumulatif + 4 bulan chart).
+    """Ringkasan limbah murni dari data nyata daily_sales.
+
+    Tanpa angka dummy: akun tanpa data mendapat has_data=False agar
+    Flutter menampilkan empty state, bukan angka karangan.
     """
     today = date.today()
 
-    # Ambil semua daily_sales user untuk kalkulasi
     all_sales = db.query(DailySales).filter(DailySales.user_id == user_id).all()
 
-    # Hitung agregat bulanan dari data nyata (jika ada), fallback ke dummy spec
-    # Dummy spec chart: Juli 42, Agt 28, Sep 16, Okt 5.2
-    dummy_chart = [
-        {"label": "Juli", "month_year": "2024-07", "waste_kg": 42.0},
-        {"label": "Agt", "month_year": "2024-08", "waste_kg": 28.0},
-        {"label": "Sep", "month_year": "2024-09", "waste_kg": 16.0},
-        {"label": "Okt", "month_year": "2024-10", "waste_kg": 5.2},
-    ]
-
     if not all_sales:
-        # Belum ada data penjualan → kembalikan dummy sesuai spec agar UI terisi
         return {
-            "financial_cumulative_idr": 2500000,
-            "month_saved_portions": 312,
-            "co2_reduced_kg": 184.0,
-            "waste_reduction_percent": -87,
-            "chart": dummy_chart,
-            "insight": "Porsi over-produksi berkurang drastis berkat kalkulator porsi otomatis BMKG & Hari Libur.",
-            "level_label": "Bebas Mubazir Level 3",
-            "audit_count": 8,
+            "has_data": False,
+            "financial_cumulative_idr": 0,
+            "month_saved_portions": 0,
+            "co2_reduced_kg": 0.0,
+            "waste_reduction_percent": 0,
+            "chart": [],
+            "insight": "Belum ada data penjualan. Catat penjualan harian di tab Stok agar ringkasan limbah terisi otomatis.",
+            "level_label": "Pejuang Pangan",
+            "audit_count": 0,
         }
 
-    # Hitung real dari DB: waste = remaining, saved = sold
-    # Group by month
+    # Harga asli per menu (fallback ke rata-rata bila menu belum punya harga)
+    prices = {
+        m.id: (m.price if m.price and m.price > 0 else AVG_PRICE_PER_PORTION)
+        for m in db.query(Menu).filter(Menu.user_id == user_id).all()
+    }
+
+    # Hitung real dari DB: waste = remaining, saved = sold. Group by month
     from collections import defaultdict
 
     monthly_waste_kg: dict[str, float] = defaultdict(float)
     monthly_saved: dict[str, int] = defaultdict(int)
+    financial = 0
 
     for ds in all_sales:
         key = _month_key(ds.date)
@@ -71,55 +69,45 @@ def get_waste_summary(
             waste = max(0, it.remaining_portions)
             monthly_waste_kg[key] += waste * KG_PER_PORTION
             monthly_saved[key] += it.sold_portions
+            financial += it.sold_portions * prices.get(it.menu_id, AVG_PRICE_PER_PORTION)
 
-    # Ambil 4 bulan terakhir termasuk bulan ini
+    # Ambil 4 bulan terakhir termasuk bulan ini (hanya bulan yang ada datanya
+    # yang tampil; tidak ada suntikan angka dummy)
     chart = []
     id_labels = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agt", "Sep", "Okt", "Nov", "Des"]
     for i in range(3, -1, -1):
-        # hitung bulan mundur
         y = today.year
         m = today.month - i
         while m <= 0:
             m += 12
             y -= 1
         key = f"{y:04d}-{m:02d}"
-        label = id_labels[m - 1]
-        waste_kg = round(monthly_waste_kg.get(key, 0.0), 1)
-        # Jika bulan belum ada data sama sekali, pakai fallback dummy agar chart tidak kosong
-        if waste_kg == 0 and key not in monthly_waste_kg:
-            # ambil dari dummy_chart secara sirkular untuk visual
-            waste_kg = dummy_chart[3 - i]["waste_kg"] if i < 4 else 0
-        chart.append({"label": label, "month_year": key, "waste_kg": waste_kg})
+        if key not in monthly_waste_kg:
+            continue
+        chart.append({
+            "label": id_labels[m - 1],
+            "month_year": key,
+            "waste_kg": round(monthly_waste_kg[key], 1),
+        })
 
-    # Hitung financial kumulatif & emisi dari total saved
     total_saved = sum(monthly_saved.values())
     total_waste_kg = sum(monthly_waste_kg.values())
-    # Jika masih kecil (data baru), tetap tampilkan minimal sesuai spec agar tidak 0
-    if total_saved < 50:
-        total_saved = 312
-    financial = total_saved * AVG_PRICE_PER_PORTION
-    # Sesuai spec: 2.5jt untuk 312 porsi (~8000/porsi). Kita pakai AVG_PRICE tapi clamp agar mendekati spec
-    if financial < 2000000:
-        financial = 2500000
-    co2 = round(total_waste_kg * CO2_PER_KG, 1) if total_waste_kg > 10 else 184.0
+    co2 = round(total_waste_kg * CO2_PER_KG, 1)
 
-    # Persen penurunan limbah (bulan pertama vs terakhir)
-    first = chart[0]["waste_kg"] if chart else 0
-    last = chart[-1]["waste_kg"] if chart else 0
-    reduction = int(round((last - first) / first * 100)) if first else -87
+    # Persen penurunan limbah (bulan pertama vs terakhir yang ada datanya)
+    if len(chart) >= 2 and chart[0]["waste_kg"] > 0:
+        first = chart[0]["waste_kg"]
+        last = chart[-1]["waste_kg"]
+        reduction = int(round((last - first) / first * 100))
+    else:
+        reduction = 0
 
-    # Bulan ini saved
     this_key = _month_key(today)
     month_saved = monthly_saved.get(this_key, 0)
-    if month_saved == 0:
-        month_saved = 312  # fallback spec
 
-    # Audit count & level dinamis
     audit_count = db.query(DailySales).filter(DailySales.user_id == user_id, DailySales.status == "final").count()
-    if audit_count == 0 and all_sales:
-        audit_count = len(all_sales)
     if audit_count == 0:
-        audit_count = 8  # fallback spec
+        audit_count = len(all_sales)
     if reduction <= -75:
         level = "Bebas Mubazir Level 3"
     elif reduction <= -40:
@@ -130,12 +118,17 @@ def get_waste_summary(
         level = "Pejuang Pangan"
 
     return {
+        "has_data": True,
         "financial_cumulative_idr": financial,
         "month_saved_portions": month_saved,
         "co2_reduced_kg": co2,
         "waste_reduction_percent": reduction,
         "chart": chart,
-        "insight": "Porsi over-produksi berkurang drastis berkat kalkulator porsi otomatis BMKG & Hari Libur.",
+        "insight": (
+            "Porsi over-produksi berkurang berkat kalkulator porsi otomatis BMKG & Hari Libur."
+            if reduction < 0
+            else "Terus catat penjualan harian agar tren limbah menurun dari bulan ke bulan."
+        ),
         "level_label": level,
         "audit_count": audit_count,
     }
