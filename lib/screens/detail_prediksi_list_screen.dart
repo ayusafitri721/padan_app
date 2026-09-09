@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../constants/app_colors.dart';
+import '../services/location_service.dart';
 import '../services/prediction_service.dart';
 
 /// Menampilkan detail prediksi untuk **semua** menu yang baru di-save.
@@ -32,10 +33,22 @@ class _DetailPrediksiListScreenState extends State<DetailPrediksiListScreen> {
 
   Future<void> _loadAll() async {
     setState(() => _loading = true);
+    // Lokasi shared (cache sesi) agar faktor cuaca per menu ikut wilayah
+    // warung, bukan default Kemayoran.
+    DeviceLocation? loc;
+    try {
+      loc = await LocationService.getBestLocation();
+    } catch (_) {
+      loc = null;
+    }
     final results = await Future.wait(
       widget.menuIds.map((id) async {
         try {
-          final p = await PredictionService.fetchDetail(id);
+          final p = await PredictionService.fetchDetail(
+            id,
+            latitude: loc?.latitude,
+            longitude: loc?.longitude,
+          );
           return p;
         } catch (e) {
           return e;

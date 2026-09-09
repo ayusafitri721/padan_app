@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
 import 'auth_service.dart';
@@ -9,7 +10,19 @@ import 'auth_service.dart';
 class ApiService {
   ApiService._();
 
-  static const String baseUrl = 'http://10.197.133.126:8000';
+  /// IP LAN untuk testing di HP fisik (milik partner, jangan dihapus).
+  static const String _deviceBaseUrl = 'http://10.197.133.126:8000';
+
+  /// Di web, backend hampir pasti satu host dengan halaman ini
+  /// (mis. localhost:8080 → localhost:8000) sehingga tidak tergantung
+  /// IP LAN yang bisa berubah tiap ganti WiFi. Di mobile pakai LAN IP.
+  static String get baseUrl {
+    if (kIsWeb) {
+      final host = Uri.base.host;
+      if (host.isNotEmpty) return 'http://$host:8000';
+    }
+    return _deviceBaseUrl;
+  }
 
   /// Batas 15 detik untuk SEMUA request — tanpa ini request yang stall
   /// bikin UI muter selamanya. Timeout diubah jadi ApiException agar

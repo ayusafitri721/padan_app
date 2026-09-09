@@ -125,7 +125,7 @@ class AuthService {
   }) {
     final cur = currentSession.value;
     if (cur == null) return;
-    currentSession.value = AuthResult(
+    final updated = AuthResult(
       token: cur.token,
       user: AuthUser(
         id: cur.user.id,
@@ -134,6 +134,9 @@ class AuthService {
         businessType: businessType ?? cur.user.businessType,
       ),
     );
+    currentSession.value = updated;
+    // Sinkron ke storage agar tidak balik ke nama lama setelah restart.
+    unawaited(_persist(updated));
   }
 
   static AuthResult _setSession(Map<String, dynamic> data) {

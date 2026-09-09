@@ -135,6 +135,7 @@ class PricingConfigIn(BaseModel):
     closing_time: str | None = None  # "HH:MM" atau "HH:MM:SS"
     # Cara lama: jam mulai intervensi langsung (tetap didukung).
     start_intervention_time: str | None = None
+    broadcast_whatsapp: bool = True
 
 
 class PricingScheduleOut(BaseModel):
