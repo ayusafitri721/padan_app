@@ -16,7 +16,7 @@ class ApiService {
   /// Web tidak pakai ini (otomatis ikut host halaman).
   static const String _deviceBaseUrl = String.fromEnvironment(
     'API_BASE',
-    defaultValue: 'http://192.168.100.154:8000',
+    defaultValue: 'http://172.28.144.1:8000',
   );
 
   /// Di web, backend hampir pasti satu host dengan halaman ini
