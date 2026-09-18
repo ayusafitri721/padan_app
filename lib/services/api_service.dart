@@ -30,17 +30,26 @@ class ApiService {
     return _deviceBaseUrl;
   }
 
-  /// Batas 15 detik untuk SEMUA request — tanpa ini request yang stall
-  /// bikin UI muter selamanya. Timeout diubah jadi ApiException agar
-  /// ditampilkan sebagai pesan error yang jelas.
-  static Future<http.Response> _send(Future<http.Response> request) async {
-    try {
-      return await request.timeout(const Duration(seconds: 15));
-    } on TimeoutException {
-      throw ApiException(
-        'Server tidak merespons dalam 15 detik. Pastikan backend berjalan.',
-      );
+  /// Batas per percobaan 20 detik, retry 2x (total toleransi ~60 detik).
+  /// Alasan: Railway free cold-start ±50 detik setelah idle; percobaan
+  /// pertama membangunkan server, percobaan berikut masuk. Tanpa retry,
+  /// tap pertama tiap pagi selalu gagal. Timeout diubah jadi ApiException
+  /// agar ditampilkan sebagai pesan error yang jelas.
+  static Future<http.Response> _send(
+    Future<http.Response> Function() makeRequest, {
+    int retries = 2,
+  }) async {
+    TimeoutException? lastTimeout;
+    for (var attempt = 0; attempt <= retries; attempt++) {
+      try {
+        return await makeRequest().timeout(const Duration(seconds: 20));
+      } on TimeoutException catch (e) {
+        lastTimeout = e;
+      }
     }
+    throw ApiException(
+      'Server tidak merespons dalam ${(retries + 1) * 20} detik. Pastikan backend berjalan.',
+    );
   }
 
   static Map<String, String> get _headers {
@@ -58,7 +67,7 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> get(String path) async {
-    final response = await _send(http.get(
+    final response = await _send(() => http.get(
       Uri.parse('$baseUrl$path'),
       headers: _headers,
     ));
@@ -73,7 +82,7 @@ class ApiService {
   }
 
   static Future<List<dynamic>> getList(String path) async {
-    final response = await _send(http.get(
+    final response = await _send(() => http.get(
       Uri.parse('$baseUrl$path'),
       headers: _headers,
     ));
@@ -97,7 +106,7 @@ class ApiService {
     String path,
     Map<String, dynamic> body,
   ) async {
-    final response = await _send(http.post(
+    final response = await _send(() => http.post(
       Uri.parse('$baseUrl$path'),
       headers: _headers,
       body: jsonEncode(body),
@@ -116,7 +125,7 @@ class ApiService {
     String path,
     Map<String, dynamic> body,
   ) async {
-    final response = await _send(http.put(
+    final response = await _send(() => http.put(
       Uri.parse('$baseUrl$path'),
       headers: _headers,
       body: jsonEncode(body),
@@ -132,7 +141,7 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> delete(String path) async {
-    final response = await _send(http.delete(
+    final response = await _send(() => http.delete(
       Uri.parse('$baseUrl$path'),
       headers: _headers,
     ));
@@ -182,7 +191,8 @@ class ApiService {
     );
   }
 
-  static Future<Uint8List> getBytes(String path) async {    final response = await _send(http.get(
+  static Future<Uint8List> getBytes(String path) async {
+    final response = await _send(() => http.get(
       Uri.parse('$baseUrl$path'),
       headers: _headers,
     ));

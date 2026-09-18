@@ -92,13 +92,15 @@ class LocationService {
     }
 
     try {
-      // Backstop 10 detik: timeLimit plugin tidak selalu dihormati di web.
+      // Fix GPS pertama (apalagi indoor) bisa 20-30 detik: jangan putus
+      // terlalu cepat. Paint pertama tetap instan via lastKnown/default —
+      // yang lama hanya refine diam-diam di background.
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.medium,
-          timeLimit: Duration(seconds: 8),
+          timeLimit: Duration(seconds: 25),
         ),
-      ).timeout(const Duration(seconds: 10));
+      ).timeout(const Duration(seconds: 30));
       final loc = DeviceLocation(
         latitude: position.latitude,
         longitude: position.longitude,
