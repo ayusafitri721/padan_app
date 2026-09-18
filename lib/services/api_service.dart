@@ -44,7 +44,12 @@ class ApiService {
   }
 
   static Map<String, String> get _headers {
-    final headers = <String, String>{'Content-Type': 'application/json'};
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      // Samarkan UA: sebagian jaringan memblokir UA non-browser (Dart/okhttp).
+      'User-Agent':
+          'Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Mobile Safari/537.36',
+    };
     final token = AuthService.currentSession.value?.token;
     if (token != null && token.isNotEmpty) {
       headers['Authorization'] = 'Bearer $token';

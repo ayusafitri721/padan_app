@@ -51,12 +51,12 @@ class _LoginScreenState extends State<LoginScreen> {
         title: 'Login Gagal',
         desc: e.message,
       );
-    } on Exception {
+    } catch (e) {
       if (!mounted) return;
       showErrorDialog(
         context,
         title: 'Login Gagal',
-        desc: 'Tidak dapat terhubung ke server. Pastikan backend berjalan.',
+        desc: 'Tidak dapat terhubung ke server. (${e.runtimeType})',
       );
     } finally {
       if (mounted) setState(() => _isLoading = false);
