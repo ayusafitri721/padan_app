@@ -1,0 +1,8 @@
+# Jangan masuk image (terutama .venv Windows + file upload lokal)
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+uploads/*
+!uploads/.gitkeep
+.git
