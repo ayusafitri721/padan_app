@@ -10,8 +10,10 @@ import 'auth_service.dart';
 class ApiService {
   ApiService._();
 
-  /// IP LAN untuk testing di HP fisik (milik partner, jangan dihapus).
-  static const String _deviceBaseUrl = 'http://10.197.133.126:8000';
+  /// IP LAN laptop dev untuk testing di HP fisik.
+  /// Ganti ke IP masing-masing (cek via `hostname -I`); tiap ganti WiFi
+  /// biasanya ikut ganti. Web tidak pakai ini (otomatis ikut host halaman).
+  static const String _deviceBaseUrl = 'http://192.168.100.154:8000';
 
   /// Di web, backend hampir pasti satu host dengan halaman ini
   /// (mis. localhost:8080 → localhost:8000) sehingga tidak tergantung
