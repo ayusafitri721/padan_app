@@ -12,10 +12,10 @@ DATABASE_URL = os.environ.get(
 )
 
 
-def _connect_args() -> dict:
+def _connect_args(url: str = DATABASE_URL) -> dict:
     # DB cloud (TiDB dkk) wajib TLS. Pakai CA dari env, atau bundle bawaan OS.
     # Lokal (MariaDB tanpa SSL) jangan set apa pun → koneksi polos.
-    if "tidbcloud.com" not in DATABASE_URL and "DB_SSL_CA" not in os.environ:
+    if "tidbcloud.com" not in url and "DB_SSL_CA" not in os.environ:
         return {}
     ca = os.environ.get("DB_SSL_CA", "/etc/ssl/certs/ca-certificates.crt")
     if os.path.exists(ca):
@@ -23,7 +23,9 @@ def _connect_args() -> dict:
     return {}
 
 
-engine = create_engine(DATABASE_URL, pool_pre_ping=True, connect_args=_connect_args())
+CONNECT_ARGS = _connect_args()
+
+engine = create_engine(DATABASE_URL, pool_pre_ping=True, connect_args=CONNECT_ARGS)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
