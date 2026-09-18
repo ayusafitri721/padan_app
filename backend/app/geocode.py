@@ -8,8 +8,13 @@ DATA_FILE = Path(__file__).resolve().parent.parent / "data" / "wilayah_reverse.j
 
 @lru_cache(maxsize=1)
 def _load_points() -> list[dict]:
-    with open(DATA_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        # File wilayah tidak ikut ke-deploy / korup → resolve gagal lembut
+        # (None) dan pemanggil fallback ke default, bukan 500.
+        return []
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
