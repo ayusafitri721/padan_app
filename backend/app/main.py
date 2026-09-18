@@ -3,6 +3,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
 from .routers import auth, predictions, pricing, profile, sales, waste, weather
@@ -44,3 +45,9 @@ app.mount("/uploads", StaticFiles(directory=str(_uploads_dir)), name="uploads")
 @app.get("/")
 def root():
     return {"message": "PADAN API - Selaraskan Pangan, Cegah Sisa"}
+
+
+@app.head("/", include_in_schema=False)
+def root_head():
+    # Untuk monitor keep-alive (UptimeRobot dkk) yang memakai HEAD.
+    return Response(status_code=200)
