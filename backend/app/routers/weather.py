@@ -1,4 +1,5 @@
 import json
+import logging
 import time
 import urllib.request
 from datetime import datetime
@@ -8,6 +9,8 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from ..geocode import resolve_adm4
+
+log = logging.getLogger("padan.weather")
 
 router = APIRouter(prefix="/api/v1/weather", tags=["weather"])
 
@@ -100,7 +103,10 @@ def get_weather(
             )
         adm4 = resolve_adm4(lat, lon)
         if not adm4:
-            raise HTTPException(status_code=422, detail="Lokasi tidak dapat dipetakan ke wilayah BMKG.")
+            # Jangan 422: koordinat di luar cakupan / file wilayah hilang.
+            # Degradasi anggun ke default agar kartu cuaca tetap tampil.
+            log.warning("resolve_adm4 gagal untuk %s,%s → default %s", lat, lon, DEFAULT_ADM4)
+            adm4 = DEFAULT_ADM4
 
     try:
         return WeatherResponse(**build_weather_payload(adm4))

@@ -1,9 +1,14 @@
 import json
+import logging
 import math
 from functools import lru_cache
 from pathlib import Path
 
+log = logging.getLogger("padan.geocode")
+
 DATA_FILE = Path(__file__).resolve().parent.parent / "data" / "wilayah_reverse.json"
+
+log.warning("wilayah data: %s (exists=%s)", DATA_FILE, DATA_FILE.exists())
 
 
 @lru_cache(maxsize=1)
