@@ -1,24 +1,58 @@
 import json
 import logging
 import math
+import os
+import tempfile
+import urllib.request
 from functools import lru_cache
 from pathlib import Path
 
 log = logging.getLogger("padan.geocode")
 
 DATA_FILE = Path(__file__).resolve().parent.parent / "data" / "wilayah_reverse.json"
+# Cadangan bila file tidak ikut ke-deploy (terbukti di Railway):
+# unduh sekali dari repo publik, cache di /tmp selama container hidup.
+WILAYAH_URL = os.environ.get(
+    "WILAYAH_URL",
+    "https://raw.githubusercontent.com/baradika/padan_app/main/backend/data/wilayah_reverse.json",
+)
+_TMP_FILE = Path(tempfile.gettempdir()) / "wilayah_reverse.json"
 
 log.warning("wilayah data: %s (exists=%s)", DATA_FILE, DATA_FILE.exists())
 
 
+def _download_points() -> list[dict]:
+    if _TMP_FILE.is_file():
+        try:
+            with open(_TMP_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            pass
+    log.warning("mengunduh data wilayah dari %s", WILAYAH_URL)
+    request = urllib.request.Request(WILAYAH_URL, headers={"User-Agent": "padan-app"})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        points = json.loads(response.read().decode("utf-8"))
+    try:
+        with open(_TMP_FILE, "w", encoding="utf-8") as f:
+            json.dump(points, f)
+    except OSError:
+        pass
+    return points
+
+
 @lru_cache(maxsize=1)
 def _load_points() -> list[dict]:
+    if DATA_FILE.is_file():
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            pass
     try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, ValueError):
-        # File wilayah tidak ikut ke-deploy / korup → resolve gagal lembut
-        # (None) dan pemanggil fallback ke default, bukan 500.
+        return _download_points()
+    except Exception as exc:  # noqa: BLE001 — offline total, dll.
+        # Gagal lembut: pemanggil fallback ke default, bukan 500.
+        log.warning("data wilayah tak tersedia (%s)", type(exc).__name__)
         return []
 
 
