@@ -552,12 +552,16 @@ class _StokScreenState extends State<StokScreen> {
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          Text(
-                            'Daftar Menu & Porsi Terjual',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimary,
+                          Flexible(
+                            child: Text(
+                              'Daftar Menu & Porsi Terjual',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textPrimary,
+                              ),
                             ),
                           ),
                           const Spacer(),
@@ -819,12 +823,16 @@ class _HolidayToggle extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    const Text(
-                      'Toko Libur / Tutup',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
+                    const Flexible(
+                      child: Text(
+                        'Toko Libur / Tutup',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -966,6 +974,8 @@ class _MenuCard extends StatelessWidget {
                   children: [
                     Text(
                       menu.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -1074,24 +1084,31 @@ class _MenuCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              _QuickChip(
-                label: 'Habis (${menu.targetPortions})',
-                onTap: () => onChanged(menu.targetPortions),
+              Expanded(
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _QuickChip(
+                      label: 'Habis (${menu.targetPortions})',
+                      onTap: () => onChanged(menu.targetPortions),
+                    ),
+                    _QuickChip(
+                      label: '80%',
+                      onTap: () =>
+                          onChanged((menu.targetPortions * 0.8).round()),
+                    ),
+                    _QuickChip(
+                      label: '50%',
+                      onTap: () =>
+                          onChanged((menu.targetPortions * 0.5).round()),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(width: 8),
-              _QuickChip(
-                label: '80%',
-                onTap: () =>
-                    onChanged((menu.targetPortions * 0.8).round()),
-              ),
-              const SizedBox(width: 8),
-              _QuickChip(
-                label: '50%',
-                onTap: () =>
-                    onChanged((menu.targetPortions * 0.5).round()),
-              ),
-              const Spacer(),
               _Stepper(
                 value: sold,
                 onChanged: onChanged,
