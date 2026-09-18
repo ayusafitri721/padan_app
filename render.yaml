@@ -1,0 +1,20 @@
+# Deploy 1-klik ke Render (free). Cara pakai: dashboard Render →
+# New → Web Service → pilih repo ini → Render otomatis baca file ini.
+services:
+  - type: web
+    name: padan-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      # Isi manual di dashboard dengan URL TiDB Cloud, contoh:
+      # mysql+pymysql://user:pass@host:4000/padan_db?charset=utf8mb4
+      - key: DATABASE_URL
+        sync: false
+      # Biar Render generate acak saat pertama deploy:
+      - key: SECRET_KEY
+        generateValue: true
+      # Opsional (default "*" agar Flutter mobile lolos):
+      # - key: ALLOWED_ORIGINS
+      #   value: "*"

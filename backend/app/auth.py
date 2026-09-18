@@ -1,11 +1,13 @@
 from datetime import datetime, timedelta, timezone
+import os
 
 import bcrypt
 from fastapi import Header, HTTPException, status
 from jose import JWTError, jwt
 from jose.exceptions import JWTClaimsError
 
-SECRET_KEY = "padan-local-secret-key-change-in-production"
+# Production wajib isi via env (Render: generateValue). Fallback lokal dev saja.
+SECRET_KEY = os.environ.get("SECRET_KEY", "padan-local-secret-key-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 jam
 

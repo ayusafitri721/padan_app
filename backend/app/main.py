@@ -9,10 +9,18 @@ from .routers import auth, predictions, pricing, profile, sales, waste, weather
 
 app = FastAPI(title="PADAN API", version="0.1.0")
 
+# Production: isi ALLOWED_ORIGINS dengan domain frontend (koma-pisah).
+# Default "*" agar dev lokal (web/mobile) tetap jalan tanpa config.
+_cors_origins = [
+    o.strip()
+    for o in os.environ.get("ALLOWED_ORIGINS", "*").split(",")
+    if o.strip()
+]
+
 # Izinkan semua origin untuk development lokal (Flutter web/desktop/mobile)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

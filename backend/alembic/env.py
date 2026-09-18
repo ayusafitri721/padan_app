@@ -5,6 +5,7 @@ from sqlalchemy import pool
 
 from alembic import context
 
+import os
 import sys
 from pathlib import Path
 
@@ -16,6 +17,11 @@ from app import models  # noqa: E402
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+
+# Production: arahkan migrasi ke DB cloud tanpa ubah alembic.ini:
+#   DATABASE_URL=mysql+pymysql://... alembic upgrade head
+if os.environ.get("DATABASE_URL"):
+    config.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
