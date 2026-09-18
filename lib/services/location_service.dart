@@ -57,8 +57,7 @@ class LocationService {
     return Geolocator.checkPermission().then(_accepted);
   }
 
-  static Future<DeviceLocation?> getLastKnownLocation() async {
-    // geolocator_web TIDAK mengimplementasikan ini (selalu throw
+  static Future<DeviceLocation?> getLastKnownLocation() async {    // geolocator_web TIDAK mengimplementasikan ini (selalu throw
     // UnsupportedError) — jangan panggil sama sekali di web.
     if (kIsWeb) return null;
     // Instan (tanpa fix GPS / dialog izin) — cocok untuk paint pertama.
@@ -114,5 +113,13 @@ class LocationService {
   static bool _accepted(LocationPermission permission) {
     return permission == LocationPermission.always ||
         permission == LocationPermission.whileInUse;
+  }
+
+  /// Buka pengaturan aplikasi (untuk mengaktifkan izin lokasi/GPS) —
+  /// dipakai hint kartu cuaca saat lokasi tidak tersedia.
+  static Future<void> openSettings() async {
+    try {
+      await Geolocator.openAppSettings();
+    } catch (_) {}
   }
 }

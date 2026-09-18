@@ -10,10 +10,14 @@ import 'auth_service.dart';
 class ApiService {
   ApiService._();
 
-  /// IP LAN laptop dev untuk testing di HP fisik.
-  /// Ganti ke IP masing-masing (cek via `hostname -I`); tiap ganti WiFi
-  /// biasanya ikut ganti. Web tidak pakai ini (otomatis ikut host halaman).
-  static const String _deviceBaseUrl = 'http://192.168.100.154:8000';
+  /// IP LAN laptop dev untuk testing di HP fisik (default: WiFi rumah).
+  /// Dioverride saat build bila perlu, mis. mode USB (adb reverse):
+  ///   flutter build apk --debug --dart-define=API_BASE=http://127.0.0.1:8000
+  /// Web tidak pakai ini (otomatis ikut host halaman).
+  static const String _deviceBaseUrl = String.fromEnvironment(
+    'API_BASE',
+    defaultValue: 'http://192.168.100.154:8000',
+  );
 
   /// Di web, backend hampir pasti satu host dengan halaman ini
   /// (mis. localhost:8080 → localhost:8000) sehingga tidak tergantung

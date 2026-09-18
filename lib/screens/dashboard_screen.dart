@@ -811,6 +811,10 @@ class _WeatherCardState extends State<_WeatherCard> {
   bool _loading = true;
   String? _error;
 
+  /// True bila data yang tampil dari fallback default (GPS/izin mati),
+  /// bukan lokasi warung — tampilkan hint agar user sadar & bisa benerin.
+  bool _usingFallback = false;
+
   @override
   void initState() {
     super.initState();
@@ -865,6 +869,7 @@ class _WeatherCardState extends State<_WeatherCard> {
     double? longitude,
     String? adm4,
   }) async {
+    final fallback = latitude == null && longitude == null;
     setState(() {
       _loading = _weather == null;
       _error = null;
@@ -878,6 +883,7 @@ class _WeatherCardState extends State<_WeatherCard> {
       if (!mounted) return;
       setState(() {
         _weather = data;
+        _usingFallback = fallback;
         _loading = false;
       });
     } catch (e) {
@@ -945,7 +951,11 @@ class _WeatherCardState extends State<_WeatherCard> {
           else
             _WeatherContent(
               weather: _weather!,
+              usingFallback: _usingFallback,
               onRefresh: _load,
+              onOpenSettings: () async {
+                await LocationService.openSettings();
+              },
             ),
         ],
       ),
@@ -954,10 +964,17 @@ class _WeatherCardState extends State<_WeatherCard> {
 }
 
 class _WeatherContent extends StatelessWidget {
-  const _WeatherContent({required this.weather, required this.onRefresh});
+  const _WeatherContent({
+    required this.weather,
+    required this.usingFallback,
+    required this.onRefresh,
+    required this.onOpenSettings,
+  });
 
   final WeatherData weather;
+  final bool usingFallback;
   final VoidCallback onRefresh;
+  final VoidCallback onOpenSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -1069,6 +1086,43 @@ class _WeatherContent extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
+        if (usingFallback) ...[
+          GestureDetector(
+            onTap: onOpenSettings,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFE082).withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: const Color(0xFFFFE082).withValues(alpha: 0.4),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.location_off_outlined,
+                    size: 15,
+                    color: Color(0xFFFFE082),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Lokasi HP mati — cuaca wilayah default. Ketuk untuk aktifkan.',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFFFFE082),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
